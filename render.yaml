@@ -1,0 +1,26 @@
+# render.yaml — Render deployment configuration
+# Deploy the entire app as a single Web Service (Express serves both API and React)
+services:
+  - type: web
+    name: basketball-tournament
+    env: node
+    region: singapore          # ใกล้ไทยที่สุด
+    plan: free                 # เปลี่ยนเป็น starter ถ้าต้องการ persistent disk
+
+    buildCommand: npm run build
+    startCommand: npm start
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      # ตั้ง JWT_SECRET ใน Render Dashboard (Environment Variables)
+      # ห้ามเซฟค่าจริงในไฟล์นี้!
+      - key: JWT_SECRET
+        generateValue: true    # Render จะสร้างค่า random ให้อัตโนมัติ
+      # SQLite: ข้อมูลจะหายเมื่อ Redeploy (Free Plan)
+      # ถ้าต้องการข้อมูลถาวร เปิดใช้ Persistent Disk ใน Render Dashboard
+      # หรือเปลี่ยนไปใช้ DATABASE_URL ของ PostgreSQL
+      - key: DATABASE_URL
+        value: file:./dev.db

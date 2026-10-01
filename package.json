@@ -1,0 +1,13 @@
+{
+  "name": "basketball-tournament-system",
+  "version": "1.0.0",
+  "description": "ระบบเว็บประกาศและจัดการการแข่งขันบาสเกตบอล (Basketball Tournament Management System)",
+  "scripts": {
+    "build": "npm --prefix server install && npm --prefix server run prisma:generate && npm --prefix server exec -- prisma db push && npm --prefix client install && npm --prefix client run build",
+    "start": "npm --prefix server start",
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "seed": "npm --prefix server run seed",
+    "build:client": "npm --prefix client run build"
+  }
+}

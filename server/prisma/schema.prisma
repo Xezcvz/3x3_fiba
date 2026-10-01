@@ -1,0 +1,56 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Team {
+  id          Int       @id @default(autoincrement())
+  name        String
+  logoUrl     String?
+  category    String?   @default("รุ่น A") // รุ่น A, รุ่น B
+  group       String?   // กลุ่ม A, กลุ่ม B, กลุ่ม C
+  coach       String?
+  city        String?
+  description String?
+  createdAt   DateTime  @default(now())
+  homeMatches Match[]   @relation("HomeTeam")
+  awayMatches Match[]   @relation("AwayTeam")
+}
+
+model Match {
+  id            Int       @id @default(autoincrement())
+  homeTeam      Team      @relation("HomeTeam", fields: [homeTeamId], references: [id], onDelete: Cascade)
+  homeTeamId    Int
+  awayTeam      Team      @relation("AwayTeam", fields: [awayTeamId], references: [id], onDelete: Cascade)
+  awayTeamId    Int
+  category      String?   @default("รุ่น A") // รุ่น A, รุ่น B
+  homeScore     Int?
+  awayScore     Int?
+  quarterScores String?   // JSON representation of quarter scores
+  matchDate     DateTime
+  venue         String?   // สนาม 1, สนาม 2
+  status        String    @default("upcoming") // upcoming | live | finished
+  round         String?   // รอบแบ่งกลุ่ม กลุ่ม A, รอบ 8 ทีม, รอบรองชนะเลิศ, ชิงชนะเลิศ, ชิงอันดับ 3
+  createdAt     DateTime  @default(now())
+}
+
+model News {
+  id        Int      @id @default(autoincrement())
+  title     String
+  content   String
+  category  String?  @default("ประกาศ")
+  imageUrl  String?
+  createdAt DateTime @default(now())
+}
+
+model Admin {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String
+  name      String?  @default("Tournament Administrator")
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,14 @@
+const express = require('express');
+const router = express.Router();
+const { authenticate } = require('../middlewares/auth.middleware');
+const { getGroups, autoDraw, manualDraw, resetDraw } = require('../controllers/draw.controller');
+
+// Public: view groups
+router.get('/groups', getGroups);
+
+// Admin protected
+router.post('/draw/auto', authenticate, autoDraw);
+router.post('/draw/manual', authenticate, manualDraw);
+router.post('/draw/reset', authenticate, resetDraw);
+
+module.exports = router;

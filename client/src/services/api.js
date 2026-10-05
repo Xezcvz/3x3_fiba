@@ -46,6 +46,7 @@ export const getTeamById = (id) => api.get(`/teams/${id}`);
 export const createTeam = (data) => api.post('/teams', data);
 export const updateTeam = (id, data) => api.put(`/teams/${id}`, data);
 export const deleteTeam = (id) => api.delete(`/teams/${id}`);
+export const resetAllTeams = (category) => api.post('/teams/reset-all', { category });
 
 // Draw API
 export const getGroups = () => api.get('/teams/groups');
@@ -59,6 +60,8 @@ export const getMatchById = (id) => api.get(`/matches/${id}`);
 export const createMatch = (data) => api.post('/matches', data);
 export const updateMatch = (id, data) => api.put(`/matches/${id}`, data);
 export const deleteMatch = (id) => api.delete(`/matches/${id}`);
+export const resetMatchScores = (category) => api.post('/matches/reset-scores', { category });
+export const resetAllMatches = (category) => api.post('/matches/reset-all', { category });
 
 // News API
 export const getNews = (params) => api.get('/news', { params });
@@ -75,10 +78,14 @@ export const getStats = () => api.get('/stats');
 // Tournament & Bracket API
 export const getTournamentBracket = (category) =>
   api.get('/tournament/bracket', { params: { category } });
-export const generateKnockout = (category) =>
-  api.post('/tournament/generate-knockout', { category });
+export const generateKnockout = (category, seeds) =>
+  api.post('/tournament/generate-knockout', { category, seeds });
 export const advanceWinner = (matchId) =>
   api.post('/tournament/advance-winner', { matchId });
+export const resetKnockout = (category) =>
+  api.post('/tournament/reset-knockout', { category });
+export const manualSeedKnockout = (category, seeds) =>
+  api.post('/tournament/manual-seed-knockout', { category, seeds });
 export const seedTournament24 = () =>
   api.post('/tournament/seed-24');
 

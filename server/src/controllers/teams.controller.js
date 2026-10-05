@@ -217,10 +217,32 @@ async function deleteTeam(req, res, next) {
   }
 }
 
+// POST /api/teams/reset-all
+// Deletes all teams (and their matches cascade-deleted)
+async function resetAllTeams(req, res, next) {
+  try {
+    const { category } = req.body || {};
+    const where = {};
+    if (category && category !== 'all') {
+      where.category = category;
+    }
+
+    const deleted = await prisma.team.deleteMany({ where });
+
+    return res.json({
+      message: `ล้างข้อมูลทีมสำเร็จ (ลบ ${deleted.count} ทีม)`,
+      count: deleted.count,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getTeams,
   getTeamById,
   createTeam,
   updateTeam,
   deleteTeam,
+  resetAllTeams,
 };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Trophy,
@@ -7,16 +7,62 @@ import {
   Clock,
   CheckCircle2,
   Zap,
-  ArrowRight,
   Shield,
   Layers,
   MapPin,
-  Flame,
   Award,
+  RotateCcw,
+  Settings2,
+  Save,
+  X,
+  AlertTriangle,
+  RefreshCw,
+  Flame,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useModal } from '../context/ModalContext';
-import { generateKnockout, advanceWinner, seedTournament24 } from '../services/api';
+import {
+  generateKnockout,
+  advanceWinner,
+  seedTournament24,
+  resetKnockout,
+  manualSeedKnockout,
+} from '../services/api';
+
+// ─── Helper: Derive expected QF pairings from standings ──────────────────────
+// QF1: A1 vs Best3rd#2  (สนาม 1)
+// QF2: B2 vs C2          (สนาม 2)
+// ─── Helper: Derive expected QF pairings from standings ──────────────────────
+// QF1: A1 vs Best3rd#2  (สนาม 1)
+// QF2: B2 vs C2          (สนาม 2)
+// QF3: B1 vs Best3rd#1  (สนาม 1)
+// QF4: C1 vs A2          (สนาม 2)
+function deriveExpectedSeeds(standings, thirdPlaceComparison, isGroupStageComplete) {
+  // If group stage has NOT completed yet, do NOT link actual team names to QF placeholders!
+  if (!isGroupStageComplete) {
+    return {
+      qf1: { home: null, away: null, venue: 'สนาม 1' },
+      qf2: { home: null, away: null, venue: 'สนาม 2' },
+      qf3: { home: null, away: null, venue: 'สนาม 1' },
+      qf4: { home: null, away: null, venue: 'สนาม 2' },
+    };
+  }
+
+  const a1 = standings['A']?.[0];
+  const a2 = standings['A']?.[1];
+  const b1 = standings['B']?.[0];
+  const b2 = standings['B']?.[1];
+  const c1 = standings['C']?.[0];
+  const c2 = standings['C']?.[1];
+  const best3rd1 = thirdPlaceComparison?.[0];
+  const best3rd2 = thirdPlaceComparison?.[1];
+  return {
+    qf1: { home: a1, away: best3rd2, venue: 'สนาม 1' },
+    qf2: { home: b2, away: c2, venue: 'สนาม 2' },
+    qf3: { home: b1, away: best3rd1, venue: 'สนาม 1' },
+    qf4: { home: c1, away: a2, venue: 'สนาม 2' },
+  };
+}
 
 export default function FibaBracket({
   bracketData,
@@ -29,97 +75,215 @@ export default function FibaBracket({
   const [advancingId, setAdvancingId] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [hoveredTeamId, setHoveredTeamId] = useState(null);
+
+  // Manual seed modal
+  const [showManualSeed, setShowManualSeed] = useState(false);
+  const [manualSeeds, setManualSeeds] = useState({});
+  const [savingSeeds, setSavingSeeds] = useState(false);
 
   const standings = bracketData?.standings || {};
   const thirdPlaceComparison = bracketData?.thirdPlaceComparison || [];
+  const qualifiedTeams = bracketData?.qualifiedTeams || [];
   const bracket = bracketData?.bracket || { qf: [], sf: [], final: [], thirdPlace: [] };
-  const pools = ['A', 'B', 'C'].filter((g) => standings[g]);
+  const groupStageStatus = bracketData?.groupStageStatus || {};
 
-  const handleGenerate = async () => {
-    const ok = await confirm({
-      title: `สร้างรอบ 8 ทีม (Quarter-Finals) ของ ${activeCategory}?`,
-      message: `ระบบจะคัดเลือก 8 ทีมที่เข้ารอบ (แชมป์กลุ่ม 3 ทีม + รองแชมป์ 3 ทีม + อันดับ 3 ที่ดีที่สุด 2 ทีม) มาจับคู่เป็น 4 คู่ในรอบ 8 ทีม และสลับลง สนาม 1 กับ สนาม 2 ให้อัตโนมัติ`,
-      confirmText: 'สร้างรอบ 8 ทีมทันที',
-      type: 'warning',
-    });
-    if (!ok) return;
+  // Group stage status
+  const isGroupStageStarted =
+    groupStageStatus.isStarted ??
+    Object.values(standings).some((grp) => grp.some((t) => t.stats && t.stats.played > 0));
 
-    try {
-      setGenerating(true);
-      const res = await generateKnockout(activeCategory);
-      await alert({
-        title: 'สร้างรอบ 8 ทีมและรอบชิงสำเร็จ! 🏆',
-        message: res.data?.message || 'สร้างแมตช์สำเร็จแล้ว',
-        type: 'success',
-      });
-      if (onRefresh) onRefresh();
-    } catch (err) {
-      await alert({
-        title: 'เกิดข้อผิดพลาด',
-        message: err.response?.data?.message || 'ไม่สามารถสร้างรอบน็อกเอาต์ได้',
-        type: 'danger',
-      });
-    } finally {
-      setGenerating(false);
-    }
-  };
+  const isGroupStageComplete =
+    groupStageStatus.isComplete ??
+    (qualifiedTeams.length >= 8 && isGroupStageStarted);
 
-  const handleAdvance = async (matchId) => {
-    try {
-      setAdvancingId(matchId);
-      const res = await advanceWinner(matchId);
-      await alert({
-        title: 'อัปเดตทีมเข้ารอบสำเร็จ! 🏆',
-        message: res.data?.message || 'ทีมผู้ชนะได้ผ่านเข้าสู่รอบถัดไปแล้ว',
-        type: 'success',
-      });
-      if (onRefresh) onRefresh();
-    } catch (err) {
-      await alert({
-        title: 'ไม่สามารถเลื่อนทีมเข้ารอบได้',
-        message: err.response?.data?.message || 'เกิดข้อผิดพลาด',
-        type: 'danger',
-      });
-    } finally {
-      setAdvancingId(null);
-    }
-  };
-
-  const handleSeed24 = async () => {
-    const ok = await confirm({
-      title: 'โหลดโครงสร้างตัวอย่าง 24 ทีม (รุ่น A & รุ่น B)?',
-      message: 'ระบบจะสร้างทีม 24 ทีม (รุ่น A = 12 ทีม, รุ่น B = 12 ทีม) พร้อมแบ่งกลุ่ม A, B, C กลุ่มละ 4 ทีม และสร้างตารางแข่งรอบแบ่งกลุ่ม 36 แมตช์ กระจายลง สนาม 1 และ สนาม 2 ให้อัตโนมัติ',
-      confirmText: 'โหลดข้อมูลตัวอย่าง',
-      type: 'warning',
-    });
-    if (!ok) return;
-
-    try {
-      setSeeding(true);
-      const res = await seedTournament24();
-      await alert({
-        title: 'โหลดโครงสร้าง 24 ทีมสำเร็จ! 🎉',
-        message: res.data?.message || 'โหลดสำเร็จ',
-        type: 'success',
-      });
-      if (onRefresh) onRefresh();
-    } catch (err) {
-      await alert({
-        title: 'เกิดข้อผิดพลาด',
-        message: err.response?.data?.message || 'ไม่สามารถสร้างตัวอย่างได้',
-        type: 'danger',
-      });
-    } finally {
-      setSeeding(false);
-    }
-  };
+  // Derived: expected QF seed from standings (only populated if group stage completed)
+  const expectedSeeds = useMemo(
+    () => deriveExpectedSeeds(standings, thirdPlaceComparison, isGroupStageComplete),
+    [standings, thirdPlaceComparison, isGroupStageComplete]
+  );
 
   const hasKnockouts =
     bracket.qf.length > 0 ||
     bracket.sf.length > 0 ||
     bracket.final.length > 0 ||
     bracket.thirdPlace.length > 0;
+
+  const canGenerateKnockout = qualifiedTeams.length >= 8;
+
+  // ── Generate Knockout ───────────────────────────────────────────────────
+  const handleGenerate = async () => {
+    if (!canGenerateKnockout) {
+      await alert({
+        title: 'ยังไม่พร้อมสร้างรอบน็อกเอาต์',
+        message: `มีทีมผ่านเข้ารอบ ${qualifiedTeams.length} ทีม (ต้องการ 8 ทีม)\nกรุณาบันทึกคะแนนรอบแบ่งกลุ่มให้ครบก่อน`,
+        type: 'warning',
+      });
+      return;
+    }
+    const ok = await confirm({
+      title: `สร้างรอบ 8 ทีม (QF) ของ ${activeCategory}?`,
+      message: `ระบบจะคัดเลือก 8 ทีมที่เข้ารอบจากผลรอบแบ่งกลุ่ม:\n• แชมป์กลุ่ม A, B, C (3 ทีม)\n• รองแชมป์กลุ่ม A, B, C (3 ทีม)\n• อันดับ 3 ที่ดีที่สุด 2 ทีม\n\nแล้วจับคู่ QF 4 คู่ + SF 2 คู่ + ชิงชนะเลิศ + ชิงอันดับ 3 อัตโนมัติ`,
+      confirmText: '✅ สร้างรอบ 8 ทีมทันที',
+      type: 'warning',
+    });
+    if (!ok) return;
+    try {
+      setGenerating(true);
+      const res = await generateKnockout(activeCategory);
+      await alert({ title: 'สร้างรอบ 8 ทีมสำเร็จ! 🏆', message: res.data?.message, type: 'success' });
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      await alert({ title: 'เกิดข้อผิดพลาด', message: err.response?.data?.message || 'ไม่สามารถสร้างรอบน็อกเอาต์ได้', type: 'danger' });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // ── Advance Winner ──────────────────────────────────────────────────────
+  const handleAdvance = async (matchId) => {
+    try {
+      setAdvancingId(matchId);
+      const res = await advanceWinner(matchId);
+      await alert({ title: 'อัปเดตทีมเข้ารอบสำเร็จ! 🏆', message: res.data?.message, type: 'success' });
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      await alert({ title: 'ไม่สามารถเลื่อนทีมเข้ารอบได้', message: err.response?.data?.message || 'เกิดข้อผิดพลาด', type: 'danger' });
+    } finally {
+      setAdvancingId(null);
+    }
+  };
+
+  // ── Reset Knockout ──────────────────────────────────────────────────────
+  const handleReset = async () => {
+    const ok = await confirm({
+      title: `⚠️ รีเซ็ตรอบน็อกเอาต์ทั้งหมดของ ${activeCategory}?`,
+      message: `จะลบแมตช์ QF, SF, ชิงชนะเลิศ และชิงอันดับ 3 ทั้งหมด\nการกระทำนี้ไม่สามารถย้อนกลับได้!`,
+      confirmText: '🗑️ รีเซ็ตเลย',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      setResetting(true);
+      const res = await resetKnockout(activeCategory);
+      await alert({ title: 'รีเซ็ตสำเร็จ', message: res.data?.message, type: 'success' });
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      await alert({ title: 'เกิดข้อผิดพลาด', message: err.response?.data?.message || 'ไม่สามารถรีเซ็ตได้', type: 'danger' });
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  // ── Seed 24 Demo ────────────────────────────────────────────────────────
+  const handleSeed24 = async () => {
+    const ok = await confirm({
+      title: 'โหลดโครงสร้างตัวอย่าง 24 ทีม (รุ่น A & รุ่น B)?',
+      message: 'ระบบจะสร้างทีม 24 ทีม (รุ่น A = 12 ทีม, รุ่น B = 12 ทีม) พร้อมแบ่งกลุ่ม A, B, C กลุ่มละ 4 ทีม และสร้างตารางแข่งรอบแบ่งกลุ่ม 36 แมตช์',
+      confirmText: 'โหลดข้อมูลตัวอย่าง',
+      type: 'warning',
+    });
+    if (!ok) return;
+    try {
+      setSeeding(true);
+      const res = await seedTournament24();
+      await alert({ title: 'โหลดโครงสร้าง 24 ทีมสำเร็จ! 🎉', message: res.data?.message, type: 'success' });
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      await alert({ title: 'เกิดข้อผิดพลาด', message: err.response?.data?.message || 'ไม่สามารถสร้างตัวอย่างได้', type: 'danger' });
+    } finally {
+      setSeeding(false);
+    }
+  };
+
+  // ── Manual Seed Modal ───────────────────────────────────────────────────
+  const openManualSeed = () => {
+    const init = {};
+    ['qf1', 'qf2', 'qf3', 'qf4'].forEach((key, idx) => {
+      const match = bracket.qf[idx];
+      if (match) {
+        init[`${key}_matchId`] = match.id;
+        init[`${key}_home`] = match.homeTeam?.id || '';
+        init[`${key}_away`] = match.awayTeam?.id || '';
+      } else {
+        const seed = expectedSeeds[key];
+        init[`${key}_home`] = seed?.home?.id || '';
+        init[`${key}_away`] = seed?.away?.id || '';
+      }
+    });
+    setManualSeeds(init);
+    setShowManualSeed(true);
+  };
+
+  const handleApplyRecommendedSeeds = () => {
+    const updated = { ...manualSeeds };
+    ['qf1', 'qf2', 'qf3', 'qf4'].forEach((key) => {
+      const seed = expectedSeeds[key];
+      if (seed?.home?.id) updated[`${key}_home`] = seed.home.id;
+      if (seed?.away?.id) updated[`${key}_away`] = seed.away.id;
+    });
+    setManualSeeds(updated);
+  };
+
+  const handleSaveManualSeeds = async () => {
+    // If knockout matches don't exist yet, generate them directly with the chosen seeds!
+    if (bracket.qf.length === 0) {
+      const seedPairs = ['qf1', 'qf2', 'qf3', 'qf4'].map((key) => ({
+        homeTeamId: manualSeeds[`${key}_home`] ? Number(manualSeeds[`${key}_home`]) : null,
+        awayTeamId: manualSeeds[`${key}_away`] ? Number(manualSeeds[`${key}_away`]) : null,
+      }));
+
+      const hasEmpty = seedPairs.some((p) => !p.homeTeamId || !p.awayTeamId);
+      if (hasEmpty) {
+        await alert({
+          title: 'ข้อมูลไม่ครบถ้วน',
+          message: 'กรุณาเลือกทีมเหย้าและทีมเยือนให้ครบทั้ง 4 คู่ (8 ทีม) เพื่อสร้างรอบ 8 ทีม',
+          type: 'warning',
+        });
+        return;
+      }
+
+      try {
+        setSavingSeeds(true);
+        const res = await generateKnockout(activeCategory, seedPairs);
+        await alert({ title: 'สร้างรอบ 8 ทีมสำเร็จ! 🏆', message: res.data?.message, type: 'success' });
+        setShowManualSeed(false);
+        if (onRefresh) onRefresh();
+      } catch (err) {
+        await alert({ title: 'เกิดข้อผิดพลาด', message: err.response?.data?.message || 'ไม่สามารถสร้างรอบ 8 ทีมได้', type: 'danger' });
+      } finally {
+        setSavingSeeds(false);
+      }
+      return;
+    }
+
+    // If knockout already exists, update match teams via manualSeedKnockout
+    const seeds = ['qf1', 'qf2', 'qf3', 'qf4']
+      .map((key, idx) => {
+        const match = bracket.qf[idx];
+        if (!match) return null;
+        return {
+          matchId: match.id,
+          homeTeamId: manualSeeds[`${key}_home`] ? Number(manualSeeds[`${key}_home`]) : null,
+          awayTeamId: manualSeeds[`${key}_away`] ? Number(manualSeeds[`${key}_away`]) : null,
+        };
+      })
+      .filter(Boolean);
+
+    try {
+      setSavingSeeds(true);
+      await manualSeedKnockout(activeCategory, seeds);
+      await alert({ title: 'อัปเดต seed สำเร็จ! ✅', message: 'บันทึกการจัดทีมเข้ารอบ 8 ทีมเรียบร้อย', type: 'success' });
+      setShowManualSeed(false);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      await alert({ title: 'เกิดข้อผิดพลาด', message: err.response?.data?.message || 'ไม่สามารถบันทึกได้', type: 'danger' });
+    } finally {
+      setSavingSeeds(false);
+    }
+  };
+
 
   return (
     <div className="space-y-6">
@@ -177,18 +341,42 @@ export default function FibaBracket({
                   <button
                     onClick={handleGenerate}
                     disabled={generating}
-                    className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-primary-600 hover:from-amber-600 hover:to-primary-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50"
+                    className={`px-4 py-2.5 font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50 ${
+                      canGenerateKnockout
+                        ? 'bg-gradient-to-r from-amber-500 to-primary-600 hover:from-amber-600 hover:to-primary-700 text-white'
+                        : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                    }`}
+                    title={canGenerateKnockout ? 'สร้างรอบ 8 ทีม' : `ต้องการ 8 ทีม (ตอนนี้ ${qualifiedTeams.length})`}
                   >
                     <Zap className="w-3.5 h-3.5" />
                     <span>{generating ? 'กำลังสร้าง...' : '⚡ สร้างรอบ 8 ทีม'}</span>
                   </button>
-                ) : null}
-
+                ) : (
+                  <>
+                    <button
+                      onClick={openManualSeed}
+                      className="px-3 py-2.5 bg-indigo-600/80 hover:bg-indigo-600 text-white font-semibold text-xs rounded-xl border border-indigo-500/50 transition-all flex items-center gap-1.5"
+                      title="กำหนดทีมใน QF ด้วยตนเอง"
+                    >
+                      <Settings2 className="w-3.5 h-3.5" />
+                      <span>จัด Seed เอง</span>
+                    </button>
+                    <button
+                      onClick={handleReset}
+                      disabled={resetting}
+                      className="px-3 py-2.5 bg-red-600/80 hover:bg-red-600 text-white font-semibold text-xs rounded-xl border border-red-500/50 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                      title="รีเซ็ตรอบน็อกเอาต์ทั้งหมด"
+                    >
+                      <RotateCcw className={`w-3.5 h-3.5 ${resetting ? 'animate-spin' : ''}`} />
+                      <span>{resetting ? 'กำลังรีเซ็ต...' : 'รีเซ็ต'}</span>
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={handleSeed24}
                   disabled={seeding}
                   className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-semibold text-xs rounded-xl border border-slate-700 transition-all flex items-center gap-1"
-                  title="สร้างข้อมูลจำลอง 24 ทีม (รุ่น A 12 ทีม, รุ่น B 12 ทีม, 3 กลุ่ม, 2 สนาม)"
+                  title="สร้างข้อมูลจำลอง 24 ทีม"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                   <span>{seeding ? 'กำลังโหลด...' : 'ตัวอย่าง 24 ทีม'}</span>
@@ -198,6 +386,208 @@ export default function FibaBracket({
           </div>
         </div>
       </div>
+
+      {/* ── Manual Seed Modal ── */}
+      {showManualSeed && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="bg-gradient-to-r from-indigo-600 to-primary-600 p-5 rounded-t-3xl flex items-center justify-between">
+              <div>
+                <h3 className="text-white font-extrabold text-lg flex items-center gap-2">
+                  <Settings2 className="w-5 h-5" />
+                  กำหนด Seed รอบ 8 ทีม ({activeCategory})
+                </h3>
+                <p className="text-indigo-200 text-xs mt-0.5">เลือกทีมสำหรับแต่ละ QF slot ด้วยตนเอง</p>
+              </div>
+              <button onClick={() => setShowManualSeed(false)} className="text-white/70 hover:text-white">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Standings summary & auto-fill button */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>8 ทีมที่ผ่านรอบแบ่งกลุ่ม (คำนวณอัตโนมัติ)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleApplyRecommendedSeeds}
+                    className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] rounded-lg border border-indigo-200 transition-colors flex items-center gap-1"
+                    title="เติมทีมทั้ง 4 คู่ตามผลคะแนนรอบแบ่งกลุ่ม"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>เติมทีมตามผลกลุ่ม</span>
+                  </button>
+                </div>
+
+                {qualifiedTeams.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {qualifiedTeams.map((t) => (
+                      <span
+                        key={t.id}
+                        className="px-2 py-0.5 rounded-full bg-white border border-emerald-300 text-emerald-700 font-semibold text-[11px] shadow-xs"
+                      >
+                        {t.seedLabel} {t.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500 italic">
+                    คะแนนรอบแบ่งกลุ่มยังไม่ครบถ้วน สามารถเลือกทีมด้วยตนเองได้
+                  </p>
+                )}
+              </div>
+
+              {/* 4 QF Pairings */}
+              <div className="space-y-3">
+                {[
+                  { key: 'qf1', label: 'QF 1 (คู่ที่ 1)', venue: 'สนาม 1', exp: expectedSeeds.qf1 },
+                  { key: 'qf2', label: 'QF 2 (คู่ที่ 2)', venue: 'สนาม 2', exp: expectedSeeds.qf2 },
+                  { key: 'qf3', label: 'QF 3 (คู่ที่ 3)', venue: 'สนาม 1', exp: expectedSeeds.qf3 },
+                  { key: 'qf4', label: 'QF 4 (คู่ที่ 4)', venue: 'สนาม 2', exp: expectedSeeds.qf4 },
+                ].map(({ key, label, venue, exp }) => (
+                  <div key={key} className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                    <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between text-xs font-bold">
+                      <span className="flex items-center gap-1.5">
+                        <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                        {label}
+                      </span>
+                      <span className="flex items-center gap-1 text-slate-400 text-[11px]">
+                        <MapPin className="w-3 h-3" />
+                        {venue}
+                      </span>
+                    </div>
+
+                    <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white">
+                      {['home', 'away'].map((side) => {
+                        const expTeam = side === 'home' ? exp?.home : exp?.away;
+                        return (
+                          <div key={side} className="space-y-1">
+                            <label className="block text-[11px] font-bold text-slate-600">
+                              {side === 'home' ? '🏠 ทีมเหย้า' : '✈️ ทีมเยือน'}
+                              {expTeam && (
+                                <span className="text-indigo-600 font-semibold ml-1 text-[10px]">
+                                  (แนะนำ: {expTeam.seedLabel} {expTeam.name})
+                                </span>
+                              )}
+                            </label>
+                            <select
+                              value={manualSeeds[`${key}_${side}`] || ''}
+                              onChange={(e) =>
+                                setManualSeeds((prev) => ({ ...prev, [`${key}_${side}`]: e.target.value }))
+                              }
+                              className="w-full text-xs border border-slate-300 rounded-xl px-2.5 py-2 bg-white text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                            >
+                              <option value="">-- เลือกทีม --</option>
+                              {qualifiedTeams.length > 0 && (
+                                <optgroup label="⭐ ทีมที่ผ่านเข้ารอบตามคะแนน">
+                                  {qualifiedTeams.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                      {t.seedLabel} · {t.name}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              {['A', 'B', 'C'].map((grp) => {
+                                const groupTeams = standings[grp] || [];
+                                if (groupTeams.length === 0) return null;
+                                return (
+                                  <optgroup key={grp} label={`กลุ่ม ${grp}`}>
+                                    {groupTeams.map((t, idx) => (
+                                      <option key={t.id} value={t.id}>
+                                        #{idx + 1} {t.name} (ชนะ {t.wins || 0} แพ้ {t.losses || 0})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                );
+                              })}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {bracket.qf.length === 0 ? (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 flex items-start gap-2.5 text-xs text-indigo-800">
+                  <Sparkles className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">โหมดสร้างรอบน็อกเอาต์ใหม่</p>
+                    <p className="text-indigo-600 mt-0.5">
+                      เมื่อกด &quot;สร้างรอบ 8 ทีมทันที&quot; ระบบจะสร้าง QF 4 คู่, SF 2 คู่, ชิงอันดับ 3, และรอบชิงชนะเลิศตามรายชื่อทีมที่เลือกด้านบน
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 flex items-center gap-2 text-xs text-emerald-800">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <p>กำลังแก้ไขทีมในรอบ 8 ทีมที่มีอยู่แล้ว</p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowManualSeed(false)}
+                  className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveManualSeeds}
+                  disabled={savingSeeds}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl transition-colors flex items-center gap-2 disabled:opacity-50 shadow-md shadow-indigo-600/20"
+                >
+                  {savingSeeds ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : bracket.qf.length === 0 ? (
+                    <Zap className="w-4 h-4" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  <span>
+                    {savingSeeds
+                      ? 'กำลังประมวลผล...'
+                      : bracket.qf.length === 0
+                      ? 'สร้างรอบ 8 ทีมทันที'
+                      : 'บันทึกการจัดทีม'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SYNC STATUS BANNER ── */}
+      {!hasKnockouts && canGenerateKnockout && isAuthenticated && (
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300 rounded-2xl px-5 py-4 flex items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div>
+              <p className="font-bold text-emerald-800 text-sm">รอบแบ่งกลุ่มครบแล้ว! พร้อมสร้างรอบน็อกเอาต์</p>
+              <p className="text-xs text-emerald-600 mt-0.5">
+                {qualifiedTeams.length} ทีมเข้ารอบ sync จากคะแนนกลุ่มอัตโนมัติ
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleGenerate}
+            disabled={generating}
+            className="flex-shrink-0 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition-colors flex items-center gap-2 disabled:opacity-50"
+          >
+            <Zap className="w-4 h-4" />
+            สร้างเลย!
+          </button>
+        </div>
+      )}
 
       {/* ── TOURNAMENT BRACKET CANVAS (Horizontal Scroll) ── */}
       <div className="overflow-x-auto pb-8 pt-2">
@@ -286,20 +676,22 @@ export default function FibaBracket({
                                 <span className="font-mono text-slate-500 font-medium text-[11px]">
                                   {team.stats.won}W-{team.stats.lost}L
                                 </span>
-                                {isQ ? (
-                                  <span
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-black flex items-center gap-0.5 border ${
-                                      idx === 2
-                                        ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                        : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                    }`}
-                                    title={team.qualifyReason}
-                                  >
-                                    <span>Q</span>
-                                    <CheckCircle2 className="w-2.5 h-2.5" />
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] text-slate-300 font-bold">OUT</span>
+                                {isGroupStageComplete && (
+                                  isQ ? (
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-black flex items-center gap-0.5 border ${
+                                        idx === 2
+                                          ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                          : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                      }`}
+                                      title={team.qualifyReason}
+                                    >
+                                      <span>Q</span>
+                                      <CheckCircle2 className="w-2.5 h-2.5" />
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-300 font-bold">OUT</span>
+                                  )
                                 )}
                               </div>
                             </div>
@@ -312,8 +704,8 @@ export default function FibaBracket({
               })}
             </div>
 
-            {/* Best 3rd Place Comparison Table */}
-            {thirdPlaceComparison.length > 0 && (
+            {/* Best 3rd Place Comparison Table — Only show when group stage is COMPLETE */}
+            {isGroupStageComplete && thirdPlaceComparison.length > 0 && (
               <div className="bg-amber-50/70 rounded-2xl border border-amber-200/80 p-3 space-y-2 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-amber-900 flex items-center gap-1">
@@ -327,9 +719,9 @@ export default function FibaBracket({
                     <div
                       key={t.id}
                       className={`p-1.5 rounded-lg flex items-center justify-between text-[11px] ${
-                        t.isQualified
+                        isGroupStageComplete && t.isQualified
                           ? 'bg-white border border-amber-300 text-amber-950 font-semibold'
-                          : 'bg-white/60 text-slate-400'
+                          : 'bg-white/60 text-slate-600'
                       }`}
                     >
                       <div className="flex items-center gap-1.5 truncate">
@@ -339,10 +731,12 @@ export default function FibaBracket({
                       <div className="flex items-center gap-1.5 flex-shrink-0 font-mono">
                         <span>{t.stats.won}W-{t.stats.lost}L</span>
                         <span>({t.stats.diff > 0 ? `+${t.stats.diff}` : t.stats.diff})</span>
-                        {t.isQualified ? (
-                          <span className="text-[9px] font-black bg-emerald-100 text-emerald-700 px-1 py-0.2 rounded">Q</span>
-                        ) : (
-                          <span className="text-[9px] font-bold text-rose-400">OUT</span>
+                        {isGroupStageComplete && (
+                          t.isQualified ? (
+                            <span className="text-[9px] font-black bg-emerald-100 text-emerald-700 px-1 py-0.2 rounded">Q</span>
+                          ) : (
+                            <span className="text-[9px] font-bold text-rose-400">OUT</span>
+                          )
                         )}
                       </div>
                     </div>
@@ -368,7 +762,9 @@ export default function FibaBracket({
                   รอบ 8 ทีม (Quarter-Finals)
                 </h3>
                 <span className="text-[11px] text-slate-500 font-medium">
-                  4 แมตช์ · สนาม 1 & สนาม 2
+                  {!isGroupStageComplete && bracket.qf.length === 0
+                    ? '4 แมตช์ · รอผลรอบแบ่งกลุ่ม'
+                    : '4 แมตช์ · สนาม 1 & สนาม 2'}
                 </span>
               </div>
             </div>
@@ -389,14 +785,40 @@ export default function FibaBracket({
                 ))
               ) : (
                 <div className="space-y-4">
-                  <PlaceholderNode title="QF 1 (สนาม 1)" seedH="A1 (แชมป์กลุ่ม A)" seedA="อันดับ 3 ที่ดีที่สุด (#2)" venue="สนาม 1" />
-                  <PlaceholderNode title="QF 2 (สนาม 2)" seedH="B2 (รองแชมป์กลุ่ม B)" seedA="C2 (รองแชมป์กลุ่ม C)" venue="สนาม 2" />
-                  <PlaceholderNode title="QF 3 (สนาม 1)" seedH="B1 (แชมป์กลุ่ม B)" seedA="อันดับ 3 ที่ดีที่สุด (#1)" venue="สนาม 1" />
-                  <PlaceholderNode title="QF 4 (สนาม 2)" seedH="C1 (แชมป์กลุ่ม C)" seedA="A2 (รองแชมป์กลุ่ม A)" venue="สนาม 2" />
+                  {/* Placeholders synced from group standings */}
+                  <PlaceholderNode
+                    title="QF 1 (สนาม 1)"
+                    seedH={expectedSeeds.qf1.home ? `${expectedSeeds.qf1.home.seedLabel} · ${expectedSeeds.qf1.home.name}` : 'รอผล: แชมป์กลุ่ม A (A1)'}
+                    seedA={expectedSeeds.qf1.away ? `${expectedSeeds.qf1.away.seedLabel} · ${expectedSeeds.qf1.away.name}` : 'รอผล: อันดับ 3 ที่ดีที่สุด (#2)'}
+                    venue="สนาม 1"
+                    isDataReady={!!expectedSeeds.qf1.home}
+                  />
+                  <PlaceholderNode
+                    title="QF 2 (สนาม 2)"
+                    seedH={expectedSeeds.qf2.home ? `${expectedSeeds.qf2.home.seedLabel} · ${expectedSeeds.qf2.home.name}` : 'รอผล: รองแชมป์กลุ่ม B (B2)'}
+                    seedA={expectedSeeds.qf2.away ? `${expectedSeeds.qf2.away.seedLabel} · ${expectedSeeds.qf2.away.name}` : 'รอผล: รองแชมป์กลุ่ม C (C2)'}
+                    venue="สนาม 2"
+                    isDataReady={!!expectedSeeds.qf2.home}
+                  />
+                  <PlaceholderNode
+                    title="QF 3 (สนาม 1)"
+                    seedH={expectedSeeds.qf3.home ? `${expectedSeeds.qf3.home.seedLabel} · ${expectedSeeds.qf3.home.name}` : 'รอผล: แชมป์กลุ่ม B (B1)'}
+                    seedA={expectedSeeds.qf3.away ? `${expectedSeeds.qf3.away.seedLabel} · ${expectedSeeds.qf3.away.name}` : 'รอผล: อันดับ 3 ที่ดีที่สุด (#1)'}
+                    venue="สนาม 1"
+                    isDataReady={!!expectedSeeds.qf3.home}
+                  />
+                  <PlaceholderNode
+                    title="QF 4 (สนาม 2)"
+                    seedH={expectedSeeds.qf4.home ? `${expectedSeeds.qf4.home.seedLabel} · ${expectedSeeds.qf4.home.name}` : 'รอผล: แชมป์กลุ่ม C (C1)'}
+                    seedA={expectedSeeds.qf4.away ? `${expectedSeeds.qf4.away.seedLabel} · ${expectedSeeds.qf4.away.name}` : 'รอผล: รองแชมป์กลุ่ม A (A2)'}
+                    venue="สนาม 2"
+                    isDataReady={!!expectedSeeds.qf4.home}
+                  />
                 </div>
               )}
             </div>
           </div>
+
 
           {/* ════════ CONNECTOR 2: QF to SF (SVG Lines) ════════ */}
           <div className="w-10 flex-shrink-0 flex items-center justify-center">
@@ -707,17 +1129,22 @@ function MatchBracketNode({
 }
 
 // ─── Placeholder Node for Scheduled / Future Rounds ───────────────────────
-function PlaceholderNode({ title, seedH, seedA, venue = 'สนาม 1', highlight = false }) {
+function PlaceholderNode({ title, seedH, seedA, venue = 'สนาม 1', highlight = false, isDataReady = false }) {
   return (
     <div
       className={`rounded-2xl border-2 border-dashed p-3 space-y-2 text-xs select-none ${
         highlight
           ? 'bg-amber-500/5 border-amber-300'
+          : isDataReady
+          ? 'bg-indigo-50/50 border-indigo-200/80'
           : 'bg-slate-50/80 border-slate-200 text-slate-400'
       }`}
     >
       <div className="font-bold text-[11px] text-slate-500 uppercase tracking-wider flex items-center justify-between">
-        <span>{title}</span>
+        <span className="flex items-center gap-1">
+          {isDataReady && <CheckCircle2 className="w-3 h-3 text-indigo-400" />}
+          {title}
+        </span>
         <span className="text-[10px] text-slate-400 font-normal flex items-center gap-1">
           <MapPin className="w-3 h-3" />
           <span>{venue}</span>
@@ -725,20 +1152,32 @@ function PlaceholderNode({ title, seedH, seedA, venue = 'สนาม 1', highli
       </div>
 
       <div className="space-y-1 font-medium">
-        <div className="p-2 rounded-xl bg-white border border-slate-200/60 flex items-center justify-between text-slate-600">
+        <div
+          className={`p-2 rounded-xl border flex items-center justify-between ${
+            isDataReady
+              ? 'bg-white border-indigo-200/60 text-slate-700'
+              : 'bg-slate-100/70 border-dashed border-slate-200 text-slate-400 text-[11px]'
+          }`}
+        >
           <div className="flex items-center gap-2 truncate">
-            <span className="w-2 h-2 rounded-full bg-slate-300" />
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isDataReady ? 'bg-indigo-400' : 'bg-slate-300'}`} />
             <span className="truncate">{seedH}</span>
           </div>
-          <span className="font-mono text-slate-300 font-bold">-</span>
+          <span className="font-mono text-slate-300 font-bold flex-shrink-0">-</span>
         </div>
 
-        <div className="p-2 rounded-xl bg-white border border-slate-200/60 flex items-center justify-between text-slate-600">
+        <div
+          className={`p-2 rounded-xl border flex items-center justify-between ${
+            isDataReady
+              ? 'bg-white border-indigo-200/60 text-slate-700'
+              : 'bg-slate-100/70 border-dashed border-slate-200 text-slate-400 text-[11px]'
+          }`}
+        >
           <div className="flex items-center gap-2 truncate">
-            <span className="w-2 h-2 rounded-full bg-slate-300" />
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isDataReady ? 'bg-indigo-400' : 'bg-slate-300'}`} />
             <span className="truncate">{seedA}</span>
           </div>
-          <span className="font-mono text-slate-300 font-bold">-</span>
+          <span className="font-mono text-slate-300 font-bold flex-shrink-0">-</span>
         </div>
       </div>
     </div>

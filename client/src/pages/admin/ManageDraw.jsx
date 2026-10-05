@@ -260,10 +260,13 @@ export default function ManageDraw() {
 
   // ── Auto Draw ──────────────────────────────────────────────────────────
   const handleAutoDraw = async () => {
-    const ok = await confirm(
-      `จับสายอัตโนมัติ ${groupCount} สาย?\n\nทีมทั้ง ${teams.length} ทีมจะถูกสุ่มเข้าสายแบบยุติธรรม ข้อมูลสายเดิมจะถูกแทนที่`,
-      { confirmText: 'จับสายเลย!', confirmClass: 'bg-primary-600 hover:bg-primary-700 text-white' }
-    );
+    const ok = await confirm({
+      title: `🎲 สุ่มจับสลากแบ่งสายอัตโนมัติ (${groupCount} สาย)`,
+      message: `คุณต้องการสุ่มจัดสายให้กับ ${teams.length} ทีม ใช่หรือไม่?\n\nระบบจะสุ่มทีมเข้ากลุ่ม A, B, C อย่างยุติธรรมและโปร่งใส โดยข้อมูลสายเดิมจะถูกจัดสรรใหม่`,
+      confirmText: '🎲 เริ่มสุ่มจับสายเลย!',
+      cancelText: 'ยกเลิก',
+      type: 'info',
+    });
     if (!ok) return;
 
     setIsDrawing(true);
@@ -274,7 +277,11 @@ export default function ManageDraw() {
       setPendingDrawResult(res.data);
     } catch (err) {
       setIsDrawing(false);
-      await alert('เกิดข้อผิดพลาด: ' + (err.response?.data?.message || err.message));
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        message: err.response?.data?.message || err.message,
+        type: 'error',
+      });
     }
   };
 
@@ -303,9 +310,17 @@ export default function ManageDraw() {
       setGroups(res.data.groups);
       setTeams(res.data.teams);
       setMode('view');
-      await alert('บันทึกการจัดสายสำเร็จ ✅');
+      await alert({
+        title: 'สำเร็จ',
+        message: 'บันทึกการจัดสายเรียบร้อยแล้ว ✅',
+        type: 'success',
+      });
     } catch (err) {
-      await alert('เกิดข้อผิดพลาด: ' + (err.response?.data?.message || err.message));
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        message: err.response?.data?.message || err.message,
+        type: 'error',
+      });
     } finally {
       setSaving(false);
     }
@@ -313,17 +328,28 @@ export default function ManageDraw() {
 
   // ── Reset ─────────────────────────────────────────────────────────────
   const handleReset = async () => {
-    const ok = await confirm('ยืนยันรีเซ็ตการจัดสายทั้งหมด?\nทีมทุกทีมจะกลับมาเป็น "ไม่มีสาย"', {
-      confirmText: 'รีเซ็ต',
-      confirmClass: 'bg-red-600 hover:bg-red-700 text-white',
+    const ok = await confirm({
+      title: '🔄 ยืนยันการรีเซ็ตการจัดสายทั้งหมด',
+      message: 'คุณแน่ใจหรือไม่ว่าต้องการรีเซ็ตการจัดสาย?\nทีมทุกทีมจะกลับมาเป็นสถานะ "ไม่มีสาย" และข้อมูลการแบ่งกลุ่มจะถูกล้างออก',
+      confirmText: 'ยืนยันรีเซ็ตสาย',
+      cancelText: 'ยกเลิก',
+      type: 'warning',
     });
     if (!ok) return;
     try {
       await resetDraw();
       await loadData();
-      await alert('รีเซ็ตการจัดสายสำเร็จ');
+      await alert({
+        title: 'รีเซ็ตสำเร็จ',
+        message: 'รีเซ็ตการจัดสายของทุกทีมเรียบร้อยแล้ว',
+        type: 'success',
+      });
     } catch (err) {
-      await alert('เกิดข้อผิดพลาด');
+      await alert({
+        title: 'เกิดข้อผิดพลาด',
+        message: err.response?.data?.message || 'ไม่สามารถรีเซ็ตการจัดสายได้',
+        type: 'error',
+      });
     }
   };
 

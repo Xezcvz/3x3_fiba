@@ -6,6 +6,7 @@ const {
   createTeam,
   updateTeam,
   deleteTeam,
+  resetAllTeams,
 } = require('../controllers/teams.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { getGroups, autoDraw, manualDraw, resetDraw } = require('../controllers/draw.controller');
@@ -15,6 +16,7 @@ router.get('/groups', getGroups);
 router.post('/draw/auto', authenticate, autoDraw);
 router.post('/draw/manual', authenticate, manualDraw);
 router.post('/draw/reset', authenticate, resetDraw);
+router.post('/reset-all', authenticate, resetAllTeams);
 
 // Generic CRUD
 router.get('/', getTeams);

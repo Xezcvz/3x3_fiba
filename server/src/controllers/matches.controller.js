@@ -220,6 +220,26 @@ async function updateMatch(req, res, next) {
       }
     });
 
+    // Auto-advance winner if this is a finished knockout match
+    if (
+      updatedMatch.status === 'finished' &&
+      updatedMatch.homeScore !== null &&
+      updatedMatch.awayScore !== null &&
+      updatedMatch.round &&
+      (updatedMatch.round.includes('รอบ 8 ทีม') ||
+        updatedMatch.round.includes('QF') ||
+        (updatedMatch.round.includes('รองชนะเลิศ') && !updatedMatch.round.includes('ก่อน')))
+    ) {
+      try {
+        const { advanceWinnerInternal } = require('./tournament.controller');
+        if (typeof advanceWinnerInternal === 'function') {
+          await advanceWinnerInternal(updatedMatch.id);
+        }
+      } catch (err) {
+        console.warn('Auto-advance knockout warning:', err.message);
+      }
+    }
+
     return res.json({ message: 'อัปเดตข้อมูลแมตช์สำเร็จ', match: updatedMatch });
   } catch (error) {
     next(error);
@@ -243,10 +263,64 @@ async function deleteMatch(req, res, next) {
   }
 }
 
+// POST /api/matches/reset-scores
+// Clears scores and sets status to upcoming for all matches or by category
+async function resetMatchScores(req, res, next) {
+  try {
+    const { category } = req.body;
+    const where = {};
+    if (category && category !== 'all') {
+      where.category = category;
+    }
+
+    const updated = await prisma.match.updateMany({
+      where,
+      data: {
+        homeScore: null,
+        awayScore: null,
+        quarterScores: null,
+        status: 'upcoming',
+      },
+    });
+
+    return res.json({
+      message: `รีเซ็ตผลคะแนนสำเร็จ (${updated.count} แมตช์)`,
+      count: updated.count,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// POST /api/matches/reset-all
+// Deletes all matches or by category
+async function resetAllMatches(req, res, next) {
+  try {
+    const { category } = req.body;
+    const where = {};
+    if (category && category !== 'all') {
+      where.category = category;
+    }
+
+    const deleted = await prisma.match.deleteMany({
+      where,
+    });
+
+    return res.json({
+      message: `ล้างตารางแข่งขันสำเร็จ (ลบ ${deleted.count} แมตช์)`,
+      count: deleted.count,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getMatches,
   getMatchById,
   createMatch,
   updateMatch,
   deleteMatch,
+  resetMatchScores,
+  resetAllMatches,
 };

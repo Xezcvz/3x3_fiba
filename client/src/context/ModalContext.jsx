@@ -16,21 +16,39 @@ export function ModalProvider({ children }) {
    * @param {'danger'|'warning'|'info'} [options.type='danger']
    * @returns {Promise<boolean>}
    */
-  const confirm = useCallback(({
-    title = 'ยืนยันการทำรายการ',
-    message = 'คุณแน่ใจหรือไม่ว่าต้องการดำเนินการนี้?',
-    confirmText = 'ยืนยันการลบ',
-    cancelText = 'ยกเลิก',
-    type = 'danger',
-  }) => {
+  /**
+   * Show a beautiful confirmation modal (replacing window.confirm)
+   * Supports either confirm({ title, message, confirmText, type }) OR confirm(message, options)
+   */
+  const confirm = useCallback((optionsOrMessage = {}, maybeOptions = {}) => {
+    let opts = {};
+    if (typeof optionsOrMessage === 'string') {
+      opts = {
+        message: optionsOrMessage,
+        title: maybeOptions.title || 'ยืนยันการทำรายการ',
+        confirmText: maybeOptions.confirmText || (maybeOptions.type === 'danger' ? 'ยืนยันการลบ' : 'ยืนยัน'),
+        cancelText: maybeOptions.cancelText || 'ยกเลิก',
+        type: maybeOptions.type || 'warning',
+      };
+    } else if (typeof optionsOrMessage === 'object' && optionsOrMessage !== null) {
+      const type = optionsOrMessage.type || 'warning';
+      opts = {
+        title: optionsOrMessage.title || 'ยืนยันการทำรายการ',
+        message: optionsOrMessage.message || '',
+        confirmText: optionsOrMessage.confirmText || (type === 'danger' ? 'ยืนยันการลบ' : 'ยืนยัน'),
+        cancelText: optionsOrMessage.cancelText || 'ยกเลิก',
+        type,
+      };
+    }
+
     return new Promise((resolve) => {
       setModalConfig({
         isAlert: false,
-        title,
-        message,
-        confirmText,
-        cancelText,
-        type,
+        title: opts.title,
+        message: opts.message,
+        confirmText: opts.confirmText,
+        cancelText: opts.cancelText,
+        type: opts.type,
         onConfirm: () => {
           setModalConfig(null);
           resolve(true);
@@ -45,26 +63,33 @@ export function ModalProvider({ children }) {
 
   /**
    * Show a beautiful alert modal (replacing window.alert)
-   * @param {Object} options
-   * @param {string} options.title
-   * @param {string} options.message
-   * @param {'error'|'success'|'info'} [options.type='info']
-   * @param {string} [options.buttonText='ตกลง']
-   * @returns {Promise<void>}
+   * Supports either alert({ title, message, type }) OR alert(message, options)
    */
-  const alert = useCallback(({
-    title = 'แจ้งเตือน',
-    message = '',
-    type = 'info',
-    buttonText = 'ตกลง',
-  }) => {
+  const alert = useCallback((optionsOrMessage = {}, maybeOptions = {}) => {
+    let opts = {};
+    if (typeof optionsOrMessage === 'string') {
+      opts = {
+        message: optionsOrMessage,
+        title: maybeOptions.title || 'แจ้งเตือน',
+        type: maybeOptions.type || 'info',
+        buttonText: maybeOptions.buttonText || 'ตกลง',
+      };
+    } else if (typeof optionsOrMessage === 'object' && optionsOrMessage !== null) {
+      opts = {
+        title: optionsOrMessage.title || 'แจ้งเตือน',
+        message: optionsOrMessage.message || '',
+        type: optionsOrMessage.type || 'info',
+        buttonText: optionsOrMessage.buttonText || 'ตกลง',
+      };
+    }
+
     return new Promise((resolve) => {
       setModalConfig({
         isAlert: true,
-        title,
-        message,
-        buttonText,
-        type,
+        title: opts.title,
+        message: opts.message,
+        buttonText: opts.buttonText,
+        type: opts.type,
         onConfirm: () => {
           setModalConfig(null);
           resolve();

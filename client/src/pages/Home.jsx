@@ -60,7 +60,7 @@ export default function Home() {
 
   const getGroupTeams = (group) => teams
     .filter((team) => team.category === 'รุ่น A' && team.group === group)
-    .sort((a, b) => (b.stats?.pts || 0) - (a.stats?.pts || 0) || (b.stats?.diff || 0) - (a.stats?.diff || 0))
+    .sort((a, b) => (a.rankInGroup || Number.MAX_SAFE_INTEGER) - (b.rankInGroup || Number.MAX_SAFE_INTEGER))
     .slice(0, 4);
 
   return (
@@ -281,14 +281,14 @@ export default function Home() {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-4">
-            <p className="text-xs font-bold text-slate-500">รุ่น A · ชนะ / แพ้ / คะแนนจัดอันดับ</p>
+            <p className="text-xs font-bold text-slate-500">รุ่น A · ชนะ / แพ้ / คะแนนเฉลี่ยต่อนัด</p>
             {['A', 'B', 'C'].map((group) => {
               const groupTeams = getGroupTeams(group);
               return (
                 <div key={group} className="border-t border-slate-100 pt-3 first:border-0 first:pt-0">
                   <div className="text-xs font-bold text-primary-700 uppercase tracking-wider mb-2 flex items-center justify-between">
                     <span>กลุ่ม {group}</span>
-                    <span className="text-[10px] text-slate-400">ช / พ / แต้ม</span>
+                    <span className="text-[10px] text-slate-400">ช / พ / เฉลี่ย</span>
                   </div>
                   <div className="space-y-1.5">
                     {groupTeams.length === 0 ? (
@@ -304,7 +304,7 @@ export default function Home() {
                           <span className="text-slate-300">/</span>
                           <span className="text-rose-500">{team.stats?.lost ?? 0}</span>
                           <span className="text-slate-300">/</span>
-                          <span className="text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">{team.stats?.pts ?? 0}</span>
+                          <span className="text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">{Number(team.stats?.scoringAverage || 0).toFixed(1)}</span>
                         </div>
                       </div>
                     ))}

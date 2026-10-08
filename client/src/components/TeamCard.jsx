@@ -73,8 +73,8 @@ export default function TeamCard({ team }) {
             <span className="font-bold text-rose-500">{team.stats.lost}</span>
           </div>
           <div>
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">คะแนน</span>
-            <span className="font-black text-primary-600">{team.stats.pts}</span>
+            <span className="text-[10px] text-slate-400 uppercase font-semibold block">แต้ม/นัด</span>
+            <span className="font-black text-primary-600">{Number(team.stats.scoringAverage || 0).toFixed(1)}</span>
           </div>
         </div>
       )}

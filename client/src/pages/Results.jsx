@@ -165,7 +165,7 @@ export default function Results() {
                         <th className="py-2.5 px-2 text-center text-emerald-600">ชนะ</th>
                         <th className="py-2.5 px-2 text-center text-rose-500">แพ้</th>
                         <th className="py-2.5 px-2 text-center">+/-</th>
-                        <th className="py-2.5 px-3 text-center font-bold text-primary-700">แต้ม</th>
+                        <th className="py-2.5 px-3 text-center font-bold text-primary-700">เฉลี่ย</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -216,7 +216,7 @@ export default function Results() {
                               {team.stats?.diff > 0 ? `+${team.stats.diff}` : team.stats?.diff || 0}
                             </td>
                             <td className="py-3 px-3 text-center font-black text-primary-700 bg-primary-50/50">
-                              {team.stats?.pts || 0}
+                              {Number(team.stats?.scoringAverage || 0).toFixed(1)}
                             </td>
                           </tr>
                         ))

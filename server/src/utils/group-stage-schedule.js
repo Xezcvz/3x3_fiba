@@ -34,7 +34,7 @@ function createGroupStageRounds(teams) {
       for (let index = 0; index < rotation.length / 2; index += 1) {
         const home = rotation[index];
         const away = rotation[rotation.length - 1 - index];
-        if (home && away) fixtures.push({ category, group, homeTeamId: home.id, awayTeamId: away.id });
+        if (home && away) fixtures.push({ category, group, groupRound: round, homeTeamId: home.id, awayTeamId: away.id });
       }
       rounds[round] = [...(rounds[round] || []), ...fixtures];
       rotation.splice(1, 0, rotation.pop());

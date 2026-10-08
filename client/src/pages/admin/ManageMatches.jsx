@@ -10,6 +10,7 @@ import {
   resetMatchScores,
   resetAllMatches,
   generateGroupStageMatches,
+  autoScheduleMatches,
 } from '../../services/api';
 import StatusBadge from '../../components/StatusBadge';
 import { useModal } from '../../context/ModalContext';
@@ -433,6 +434,41 @@ export default function ManageMatches() {
     }
   };
 
+  const handleAutoScheduleTournamentDay = async () => {
+    const upcomingCount = matches.filter((match) => match.status === 'upcoming').length;
+    const isConfirmed = await confirm({
+      title: 'จัดแมตช์ทั้งหมดอัตโนมัติในวันที่ 18 ตุลาคม',
+      message: `ระบบจะจัด ${upcomingCount} แมตช์ที่ยังไม่เริ่มของทุกรุ่นให้อยู่ในวันเดียวกัน เริ่ม 08:30 น. ใช้สนาม 1 และสนาม 2 สลับตามเวลา แข่งเป็นรอบและเว้นช่วงพักระหว่างรอบ โดยทีมและทีมที่มีผู้เล่นร่วมกันจะไม่ลงเวลาเดียวกัน ข้อมูลคะแนนและผลแข่งที่บันทึกแล้วจะไม่ถูกเปลี่ยน`,
+      confirmText: 'จัดตาราง 18 ต.ค. 08:30',
+      cancelText: 'ยกเลิก',
+      type: 'info',
+    });
+    if (!isConfirmed) return;
+
+    try {
+      setResetting(true);
+      const result = await autoScheduleMatches({
+        category: 'all',
+        date: '2026-10-18',
+        startTime: '08:30',
+      });
+      await showAlert({
+        title: 'จัดตารางอัตโนมัติสำเร็จ 🎉',
+        message: result.data?.message || 'จัดตารางทุกแมตช์เรียบร้อยแล้ว',
+        type: 'success',
+      });
+      await fetchInitialData();
+    } catch (err) {
+      await showAlert({
+        title: 'จัดตารางไม่สำเร็จ',
+        message: err.response?.data?.message || 'ไม่สามารถจัดตารางแข่งขันได้ กรุณาลองอีกครั้ง',
+        type: 'error',
+      });
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
     <div className="space-y-8 pb-16">
       
@@ -455,6 +491,17 @@ export default function ManageMatches() {
         </div>
 
         <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={handleAutoScheduleTournamentDay}
+            disabled={resetting || loading || matches.every((match) => match.status !== 'upcoming')}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md shadow-indigo-500/20 transition-all disabled:opacity-50"
+            title="จัดทุกแมตช์ที่ยังไม่เริ่มลงวันที่ 18 ตุลาคม เริ่ม 08:30 น."
+          >
+            <Calendar className="w-4 h-4" />
+            <span>{resetting ? 'กำลังจัดตาราง…' : 'จัดตาราง 18 ต.ค. 08:30'}</span>
+          </button>
+
           {/* Reset Dropdown */}
           <div className="relative" ref={resetMenuRef}>
             <button

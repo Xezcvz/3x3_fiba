@@ -1,5 +1,17 @@
 const prisma = require('../prisma');
 const { rankPoolTeams, compareAcrossPools } = require('../utils/standings');
+const { getTomorrowAtNineBangkok } = require('../utils/group-stage-schedule');
+const { createBangkokDateTime } = require('../utils/tournament-day-scheduler');
+
+const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+function bangkokDateString(date) {
+  const shifted = new Date(date.getTime() + BANGKOK_OFFSET_MS);
+  const year = shifted.getUTCFullYear();
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 // Helper to compute team standings in groups for a given category (division)
 async function computeGroupStandings(category = 'รุ่น A') {
@@ -285,14 +297,25 @@ async function generateKnockoutMatches(req, res, next) {
       });
     }
 
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const lastGroupMatch = await prisma.match.findFirst({
+      where: { category, round: { contains: 'รอบแบ่งกลุ่ม' } },
+      orderBy: { matchDate: 'desc' },
+      select: { matchDate: true },
+    });
+    const eventDate = bangkokDateString(lastGroupMatch?.matchDate || getTomorrowAtNineBangkok());
+    // Keep the external division after U18 so shared players have enough rest.
+    const divisionStartHour = category === 'รุ่น A' ? 14 : 17;
+    const knockoutStart = createBangkokDateTime(
+      eventDate,
+      `${String(divisionStartHour).padStart(2, '0')}:00`,
+    );
     const createdMatches = [];
     let qfPairs = [];
 
     if (seeds && Array.isArray(seeds) && seeds.length === 4) {
       // Manual seeds mode: [{ homeTeamId, awayTeamId }, ...]
       const venues = ['สนาม 1', 'สนาม 2', 'สนาม 1', 'สนาม 2'];
-      const timeOffsets = [13, 13.25, 13.5, 13.75];
+      const timeOffsets = [0, 0, 15, 15];
 
       for (let i = 0; i < 4; i++) {
         const s = seeds[i];
@@ -357,10 +380,10 @@ async function generateKnockoutMatches(req, res, next) {
       const thirdForQf3 = thirdForQf1.id === best3rd_1.id ? best3rd_2 : best3rd_1;
 
       qfPairs = [
-        { homeTeamId: a1.id, awayTeamId: thirdForQf1.id, venue: 'สนาม 1', timeOffset: 13, label: `รอบ 8 ทีม คู่ที่ 1 (${category}: A1 vs อันดับ 3)` },
-        { homeTeamId: b2.id, awayTeamId: c2.id, venue: 'สนาม 2', timeOffset: 13.25, label: `รอบ 8 ทีม คู่ที่ 2 (${category}: B2 vs C2)` },
-        { homeTeamId: b1.id, awayTeamId: thirdForQf3.id, venue: 'สนาม 1', timeOffset: 13.5, label: `รอบ 8 ทีม คู่ที่ 3 (${category}: B1 vs อันดับ 3)` },
-        { homeTeamId: c1.id, awayTeamId: a2.id, venue: 'สนาม 2', timeOffset: 13.75, label: `รอบ 8 ทีม คู่ที่ 4 (${category}: C1 vs A2)` },
+        { homeTeamId: a1.id, awayTeamId: thirdForQf1.id, venue: 'สนาม 1', timeOffset: 0, label: `รอบ 8 ทีม คู่ที่ 1 (${category}: A1 vs อันดับ 3)` },
+        { homeTeamId: b2.id, awayTeamId: c2.id, venue: 'สนาม 2', timeOffset: 0, label: `รอบ 8 ทีม คู่ที่ 2 (${category}: B2 vs C2)` },
+        { homeTeamId: b1.id, awayTeamId: thirdForQf3.id, venue: 'สนาม 1', timeOffset: 15, label: `รอบ 8 ทีม คู่ที่ 3 (${category}: B1 vs อันดับ 3)` },
+        { homeTeamId: c1.id, awayTeamId: a2.id, venue: 'สนาม 2', timeOffset: 15, label: `รอบ 8 ทีม คู่ที่ 4 (${category}: C1 vs A2)` },
       ];
     }
 
@@ -373,7 +396,7 @@ async function generateKnockoutMatches(req, res, next) {
           category,
           round: p.label,
           venue: p.venue,
-          matchDate: new Date(tomorrow.getTime() + p.timeOffset * 60 * 60 * 1000),
+          matchDate: new Date(knockoutStart.getTime() + p.timeOffset * 60 * 1000),
           status: 'upcoming',
         },
         include: { homeTeam: true, awayTeam: true },
@@ -390,7 +413,7 @@ async function generateKnockoutMatches(req, res, next) {
         category,
         round: `รอบรองชนะเลิศ SF 1 (${category}: ชนะ QF1 vs ชนะ QF2)`,
         venue: 'สนาม 1',
-        matchDate: new Date(tomorrow.getTime() + 15 * 60 * 60 * 1000),
+        matchDate: new Date(knockoutStart.getTime() + 75 * 60 * 1000),
         status: 'upcoming',
       },
       include: { homeTeam: true, awayTeam: true },
@@ -405,7 +428,7 @@ async function generateKnockoutMatches(req, res, next) {
         category,
         round: `รอบรองชนะเลิศ SF 2 (${category}: ชนะ QF3 vs ชนะ QF4)`,
         venue: 'สนาม 2',
-        matchDate: new Date(tomorrow.getTime() + 15.5 * 60 * 60 * 1000),
+        matchDate: new Date(knockoutStart.getTime() + 75 * 60 * 1000),
         status: 'upcoming',
       },
       include: { homeTeam: true, awayTeam: true },
@@ -420,7 +443,7 @@ async function generateKnockoutMatches(req, res, next) {
         category,
         round: `ชิงอันดับ 3 (${category}: แพ้ SF1 vs แพ้ SF2)`,
         venue: 'สนาม 2',
-        matchDate: new Date(tomorrow.getTime() + 17 * 60 * 60 * 1000),
+        matchDate: new Date(knockoutStart.getTime() + 135 * 60 * 1000),
         status: 'upcoming',
       },
       include: { homeTeam: true, awayTeam: true },
@@ -435,7 +458,7 @@ async function generateKnockoutMatches(req, res, next) {
         category,
         round: `ชิงชนะเลิศ (${category}: ชนะ SF1 vs ชนะ SF2)`,
         venue: 'สนาม 1',
-        matchDate: new Date(tomorrow.getTime() + 17.5 * 60 * 60 * 1000),
+        matchDate: new Date(knockoutStart.getTime() + 135 * 60 * 1000),
         status: 'upcoming',
       },
       include: { homeTeam: true, awayTeam: true },

@@ -8,12 +8,14 @@ const {
   deleteMatch,
   resetMatchScores,
   resetAllMatches,
+  autoScheduleMatches,
 } = require('../controllers/matches.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 
 router.get('/', getMatches);
 router.post('/reset-scores', authenticate, resetMatchScores);
 router.post('/reset-all', authenticate, resetAllMatches);
+router.post('/auto-schedule', authenticate, autoScheduleMatches);
 router.get('/:id', getMatchById);
 router.post('/', authenticate, createMatch);
 router.put('/:id', authenticate, updateMatch);

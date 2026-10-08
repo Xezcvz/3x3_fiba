@@ -1,6 +1,7 @@
 const prisma = require('../prisma');
 const { parseMatchInput, scoreFromDetails, validateFinishedScore } = require('../utils/match-validation');
 const { validateSharedPlayerSchedule } = require('../utils/scheduling-constraints');
+const { buildSchedule, createBangkokDateTime } = require('../utils/tournament-day-scheduler');
 
 const MATCH_STATUSES = new Set(['upcoming', 'live', 'finished']);
 const MATCH_CATEGORIES = new Set(['รุ่น A', 'รุ่น B']);
@@ -392,6 +393,53 @@ async function resetMatchScores(req, res, next) {
   }
 }
 
+// POST /api/matches/auto-schedule
+// Schedule every upcoming fixture for one tournament day across both courts.
+async function autoScheduleMatches(req, res, next) {
+  try {
+    const { date, startTime, category = 'all' } = req.body || {};
+    if (category !== 'all' && !MATCH_CATEGORIES.has(category)) {
+      return responseBadRequest(res, 'รุ่นการแข่งขันไม่ถูกต้อง');
+    }
+
+    const startAt = createBangkokDateTime(date, startTime);
+    if (!startAt) return responseBadRequest(res, 'กรุณาเลือกวันที่และเวลาเริ่มต้นให้ถูกต้อง');
+
+    const result = await prisma.$transaction(async (transaction) => {
+      const matches = await transaction.match.findMany({
+        where: {
+          status: 'upcoming',
+          ...(category === 'all' ? {} : { category }),
+        },
+        include: { homeTeam: true, awayTeam: true },
+        orderBy: { id: 'asc' },
+      });
+      if (matches.length === 0) {
+        throw Object.assign(new Error('ไม่มีแมตช์ที่ยังไม่เริ่มให้จัดตาราง'), { statusCode: 400 });
+      }
+
+      const schedule = buildSchedule(matches, startAt);
+      for (const item of schedule) {
+        await transaction.match.update({
+          where: { id: item.id },
+          data: { matchDate: item.matchDate, venue: item.venue },
+        });
+      }
+
+      const latest = schedule.reduce((last, item) => (item.matchDate > last ? item.matchDate : last), startAt);
+      return { count: schedule.length, firstMatch: startAt, lastMatch: latest };
+    });
+
+    return res.json({
+      message: `จัดตาราง ${result.count} แมตช์เรียบร้อย เริ่ม 18 ต.ค. 08:30 น. ใช้ 2 สนามและจัดช่วงทีมไม่ให้แข่งพร้อมกัน`,
+      ...result,
+    });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
+    next(error);
+  }
+}
+
 // POST /api/matches/reset-all
 // Deletes all matches or by category
 async function resetAllMatches(req, res, next) {
@@ -424,4 +472,5 @@ module.exports = {
   deleteMatch,
   resetMatchScores,
   resetAllMatches,
+  autoScheduleMatches,
 };

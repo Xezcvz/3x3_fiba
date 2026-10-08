@@ -55,6 +55,7 @@ export const updateMatch = (id, data) => api.put(`/matches/${id}`, data);
 export const deleteMatch = (id) => api.delete(`/matches/${id}`);
 export const resetMatchScores = (category) => api.post('/matches/reset-scores', { category });
 export const resetAllMatches = (category) => api.post('/matches/reset-all', { category });
+export const autoScheduleMatches = (data) => api.post('/matches/auto-schedule', data);
 
 // News API
 export const getNews = (params) => api.get('/news', { params });

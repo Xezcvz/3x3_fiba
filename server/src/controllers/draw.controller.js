@@ -1,5 +1,82 @@
 const prisma = require('../prisma');
 const { createDrawPlan, shuffleSecure, validateLockedAssignments } = require('../utils/draw-rules');
+const { MATCH_SLOT_MS, getTomorrowAtNineBangkok, createGroupStageRounds } = require('../utils/group-stage-schedule');
+const { validateSharedPlayerSchedule } = require('../utils/scheduling-constraints');
+
+async function createScheduledGroupMatches(transaction, teams, category = 'all') {
+  const fixtures = createGroupStageRounds(teams);
+  if (fixtures.length === 0) throw Object.assign(new Error('ต้องจับทุกทีมลงกลุ่มก่อนจึงจะสร้างโปรแกรมแข่งได้'), { statusCode: 400 });
+
+  const teamIds = teams.map((team) => team.id);
+  const existingMatches = await transaction.match.count({
+    where: { OR: [{ homeTeamId: { in: teamIds } }, { awayTeamId: { in: teamIds } }] },
+  });
+  if (existingMatches > 0) throw Object.assign(new Error('ทีมมีแมตช์อยู่แล้ว กรุณาใช้ตารางเดิมเพื่อป้องกันการสร้างคู่ซ้ำ'), { statusCode: 409 });
+
+  const teamsById = new Map(teams.map((team) => [team.id, team]));
+  const slots = new Map();
+  const baseDate = getTomorrowAtNineBangkok();
+  for (const [index, fixture] of fixtures.entries()) {
+    let slot = Math.floor(index / 2);
+    let venue;
+    let matchDate;
+    while (true) {
+      matchDate = new Date(baseDate.getTime() + slot * MATCH_SLOT_MS);
+      const slotState = slots.get(slot) || { teamIds: new Set(), matchCount: 0 };
+      const sameSlotConflict = slotState.teamIds.has(fixture.homeTeamId)
+        || slotState.teamIds.has(fixture.awayTeamId)
+        || slotState.matchCount >= 2;
+      const sharedPlayerConflict = await validateSharedPlayerSchedule(transaction, {
+        teams: [teamsById.get(fixture.homeTeamId), teamsById.get(fixture.awayTeamId)],
+        matchDate,
+      });
+      if (!sameSlotConflict && !sharedPlayerConflict) {
+        venue = slotState.matchCount === 0 ? 'สนาม 1' : 'สนาม 2';
+        slotState.teamIds.add(fixture.homeTeamId);
+        slotState.teamIds.add(fixture.awayTeamId);
+        slotState.matchCount += 1;
+        slots.set(slot, slotState);
+        break;
+      }
+      slot += 1;
+    }
+
+    await transaction.match.create({
+      data: {
+        homeTeamId: fixture.homeTeamId,
+        awayTeamId: fixture.awayTeamId,
+        category: fixture.category || category,
+        round: `รอบแบ่งกลุ่ม กลุ่ม ${fixture.group}`,
+        venue,
+        matchDate,
+        status: 'upcoming',
+      },
+    });
+  }
+  return fixtures.length;
+}
+
+async function generateGroupStageMatches(req, res, next) {
+  try {
+    const { category = 'all' } = req.body || {};
+    if (!['all', 'รุ่น A', 'รุ่น B'].includes(category)) return res.status(400).json({ message: 'รุ่นการแข่งขันไม่ถูกต้อง' });
+    const where = category === 'all' ? {} : { category };
+    const createdMatches = await prisma.$transaction(async (transaction) => {
+      const teams = await transaction.team.findMany({ where, orderBy: [{ group: 'asc' }, { id: 'asc' }] });
+      if (teams.length === 0 || teams.some((team) => !team.group)) {
+        throw Object.assign(new Error('ต้องจับทุกทีมลงกลุ่มก่อนจึงจะสร้างโปรแกรมแข่งได้'), { statusCode: 400 });
+      }
+      return createScheduledGroupMatches(transaction, teams, category);
+    });
+    return res.json({
+      message: `สร้างโปรแกรมรอบแบ่งกลุ่ม ${createdMatches} แมตช์แล้ว`,
+      createdMatches,
+    });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
+    next(error);
+  }
+}
 
 async function prepareDraw(req, res, next) {
   try {
@@ -192,7 +269,7 @@ async function manualDraw(req, res, next) {
       return res.status(400).json({ message: 'แต่ละกลุ่มมีทีมได้ไม่เกิน 4 ทีม' });
     }
     const where = category === 'all' ? {} : { category };
-    const updated = await prisma.$transaction(async (transaction) => {
+    const result = await prisma.$transaction(async (transaction) => {
       let drawSession = null;
       if (sessionId !== undefined) {
         if (typeof sessionId !== 'string' || sessionId.length < 16 || sessionId.length > 64) {
@@ -224,12 +301,25 @@ async function manualDraw(req, res, next) {
       if (lockedError) throw Object.assign(new Error(lockedError), { statusCode: 400 });
       const linkedMatches = await transaction.match.count({ where: { OR: [{ homeTeamId: { in: teamIds } }, { awayTeamId: { in: teamIds } }] } });
       if (linkedMatches > 0) throw Object.assign(new Error('เปลี่ยนสายไม่ได้เมื่อมีประวัติการแข่งขันของทีมเหล่านี้แล้ว'), { statusCode: 409 });
+      const proposedTeams = matchingTeams.map((team) => ({
+        ...team,
+        group: assignments.find((assignment) => Number(assignment.teamId) === team.id)?.group || null,
+      }));
+      const canGenerateMatches = proposedTeams.every((team) => team.group);
       for (const { teamId, group } of assignments) {
         await transaction.team.update({ where: { id: Number(teamId) }, data: { group: group || null } });
       }
+
+      let createdMatches = 0;
+      if (canGenerateMatches) {
+        createdMatches = await createScheduledGroupMatches(transaction, proposedTeams, category);
+      }
+
       if (drawSession) await transaction.drawSession.delete({ where: { id: sessionId } });
-      return transaction.team.findMany({ where, orderBy: [{ group: 'asc' }, { name: 'asc' }] });
+      const updatedTeams = await transaction.team.findMany({ where, orderBy: [{ group: 'asc' }, { name: 'asc' }] });
+      return { teams: updatedTeams, createdMatches };
     });
+    const updated = result.teams;
     const grouped = updated.reduce((acc, team) => {
       const g = team.group || 'Unassigned';
       if (!acc[g]) acc[g] = [];
@@ -237,7 +327,14 @@ async function manualDraw(req, res, next) {
       return acc;
     }, {});
 
-    return res.json({ message: 'บันทึกการจัดสายสำเร็จ', groups: grouped, teams: updated });
+    return res.json({
+      message: result.createdMatches > 0
+        ? `บันทึกผลจับสลากและสร้างโปรแกรมรอบแบ่งกลุ่ม ${result.createdMatches} แมตช์แล้ว`
+        : 'บันทึกการจัดสายสำเร็จ',
+      groups: grouped,
+      teams: updated,
+      createdMatches: result.createdMatches,
+    });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
     next(error);
@@ -264,4 +361,4 @@ async function resetDraw(req, res, next) {
   }
 }
 
-module.exports = { getGroups, prepareDraw, spinDraw, cancelDraw, autoDraw, manualDraw, resetDraw };
+module.exports = { getGroups, prepareDraw, spinDraw, cancelDraw, autoDraw, manualDraw, generateGroupStageMatches, resetDraw };

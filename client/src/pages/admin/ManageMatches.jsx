@@ -9,7 +9,7 @@ import {
   deleteMatch,
   resetMatchScores,
   resetAllMatches,
-  seedTournament24,
+  generateGroupStageMatches,
 } from '../../services/api';
 import StatusBadge from '../../components/StatusBadge';
 import { useModal } from '../../context/ModalContext';
@@ -377,11 +377,12 @@ export default function ManageMatches() {
     }
   };
 
-  const handleSeed24Schedule = async () => {
+  const handleGenerateGroupSchedule = async () => {
+    const matchCount = categoryFilter === 'all' ? 'สูงสุด 36' : 'สูงสุด 18';
     const isConfirmed = await confirm({
-      title: '⚡ สร้างตารางแข่งขัน 24 ทีมใหม่ (36 แมตช์)',
-      message: 'ระบบจะสร้างทีมและตารางการแข่งขัน 24 ทีม (รุ่น A = 12 ทีม, รุ่น B = 12 ทีม) แบ่งกลุ่ม A, B, C กลุ่มละ 4 ทีม สลับสนาม 1 และสนาม 2 ครบทั้ง 36 แมตช์',
-      confirmText: 'สร้างตารางแข่ง 24 ทีม',
+      title: 'สร้างโปรแกรมรอบแบ่งกลุ่มจากสายที่จับได้',
+      message: `ระบบจะสร้างคู่พบกันหมดจากกลุ่มที่บันทึกไว้ ${matchCount} แมตช์ ใช้ 2 สนาม เริ่มพรุ่งนี้เวลา 09:00 น. และเว้นช่วงทีมที่มีผู้เล่นร่วมกันอย่างน้อย 15 นาที หากทีมมีแมตช์อยู่แล้ว ระบบจะไม่สร้างคู่ซ้ำ`,
+      confirmText: 'สร้างโปรแกรมแข่งขัน',
       cancelText: 'ยกเลิก',
       type: 'info',
     });
@@ -390,17 +391,17 @@ export default function ManageMatches() {
 
     try {
       setResetting(true);
-      const res = await seedTournament24();
+      const res = await generateGroupStageMatches(categoryFilter);
       await showAlert({
-        title: 'สำเร็จ 🎉',
-        message: res.data?.message || 'สร้างตารางแข่งขัน 24 ทีมเรียบร้อยแล้ว',
+        title: 'สร้างโปรแกรมสำเร็จ 🎉',
+        message: res.data?.message || 'สร้างโปรแกรมรอบแบ่งกลุ่มเรียบร้อยแล้ว',
         type: 'success',
       });
       await fetchInitialData();
     } catch (err) {
       await showAlert({
         title: 'เกิดข้อผิดพลาด',
-        message: err.response?.data?.message || 'ไม่สามารถสร้างตารางแข่งขันได้',
+        message: err.response?.data?.message || 'ไม่สามารถสร้างโปรแกรมแข่งขันได้',
         type: 'error',
       });
     } finally {
@@ -493,14 +494,14 @@ export default function ManageMatches() {
                   type="button"
                   onClick={() => {
                     setShowResetMenu(false);
-                    handleSeed24Schedule();
+                    handleGenerateGroupSchedule();
                   }}
                   className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-indigo-50 text-slate-700 hover:text-indigo-800 text-xs font-medium transition-colors flex items-start gap-2.5"
                 >
                   <Sparkles className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold block text-indigo-700">สร้างตารางแข่ง 24 ทีมใหม่</span>
-                    <span className="text-[11px] text-slate-500">สุ่มแบ่งกลุ่ม A, B, C ครบ 36 แมตช์ 2 สนาม</span>
+                    <span className="font-bold block text-indigo-700">สร้างแมตช์จากสายที่จับได้</span>
+                    <span className="text-[11px] text-slate-500">พบกันหมดในกลุ่ม ใช้ 2 สนาม และกันเวลาชน</span>
                   </div>
                 </button>
               </div>

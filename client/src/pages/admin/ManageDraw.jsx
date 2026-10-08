@@ -392,11 +392,18 @@ export default function ManageDraw() {
     try {
       setSaving(true);
       const assignments = revealedDraw.map(({ teamId, group }) => ({ teamId, group }));
-      await manualDraw(assignments, category, drawPlan.sessionId);
+      const result = await manualDraw(assignments, category, drawPlan.sessionId);
       setDrawPlan(null);
       setRevealedDraw([]);
       await loadData(category);
-      await alert({ title: 'จับสลากสำเร็จ', message: 'บันทึกผลการจับสลากครบทุกทีมแล้ว', type: 'success' });
+      const createdMatches = result.data?.createdMatches || 0;
+      await alert({
+        title: 'จับสลากสำเร็จ',
+        message: createdMatches > 0
+          ? `บันทึกผลครบทุกทีมและสร้างคู่แข่งรอบแบ่งกลุ่ม ${createdMatches} แมตช์แล้ว (เริ่มพรุ่งนี้ 09:00 น. ใช้ 2 สนาม)`
+          : 'บันทึกผลการจับสลากครบทุกทีมแล้ว',
+        type: 'success',
+      });
     } catch (err) {
       await alert({ title: 'บันทึกผลไม่สำเร็จ', message: err.response?.data?.message || err.message, type: 'error' });
     } finally { setSaving(false); }

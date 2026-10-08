@@ -44,6 +44,7 @@ export const prepareDraw = (data) => api.post('/teams/draw/prepare', data);
 export const spinDraw = (sessionId) => api.post('/teams/draw/spin', { sessionId });
 export const cancelDraw = (sessionId) => api.post('/teams/draw/cancel', { sessionId });
 export const manualDraw = (assignments, category = 'all', sessionId) => api.post('/teams/draw/manual', { assignments, category, ...(sessionId ? { sessionId } : {}) });
+export const generateGroupStageMatches = (category = 'all') => api.post('/teams/draw/generate-group-matches', { category });
 export const resetDraw = (category = 'all') => api.post('/teams/draw/reset', { category });
 
 // Matches API

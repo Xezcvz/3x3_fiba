@@ -10,7 +10,7 @@ const {
 } = require('../controllers/teams.controller');
 const { getRosterResetPreview, resetToOfficialRoster } = require('../controllers/roster-reset.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
-const { getGroups, prepareDraw, spinDraw, cancelDraw, autoDraw, manualDraw, resetDraw } = require('../controllers/draw.controller');
+const { getGroups, prepareDraw, spinDraw, cancelDraw, autoDraw, manualDraw, generateGroupStageMatches, resetDraw } = require('../controllers/draw.controller');
 
 // Specific routes MUST come before /:id wildcard
 router.get('/groups', getGroups);
@@ -21,6 +21,7 @@ router.post('/draw/prepare', authenticate, prepareDraw);
 router.post('/draw/spin', authenticate, spinDraw);
 router.post('/draw/cancel', authenticate, cancelDraw);
 router.post('/draw/manual', authenticate, manualDraw);
+router.post('/draw/generate-group-matches', authenticate, generateGroupStageMatches);
 router.post('/draw/reset', authenticate, resetDraw);
 router.post('/reset-all', authenticate, resetAllTeams);
 

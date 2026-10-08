@@ -17,7 +17,9 @@ function parseScoreDetails(value) {
 async function getTeamsForMatch(homeTeamId, awayTeamId) {
   const teams = await prisma.team.findMany({
     where: { id: { in: [homeTeamId, awayTeamId] } },
-    select: { id: true, category: true },
+    // Group-stage create/update validation needs each team's group; omitting it
+    // made both values `undefined` and rejected every group-stage edit.
+    select: { id: true, category: true, group: true },
   });
   if (teams.length !== 2) return { error: 'ไม่พบข้อมูลทีมที่เลือก' };
   const homeTeam = teams.find((team) => team.id === homeTeamId);

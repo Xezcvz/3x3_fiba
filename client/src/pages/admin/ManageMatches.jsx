@@ -939,7 +939,18 @@ export default function ManageMatches() {
               </div>
 
               {/* Submit Buttons */}
-              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+              <div className="sticky bottom-0 -mx-6 sm:-mx-8 -mb-6 sm:-mb-8 mt-2 px-6 sm:px-8 pb-6 sm:pb-8 pt-4 bg-white/95 backdrop-blur border-t border-slate-100">
+                {formError && (
+                  <div
+                    role="alert"
+                    aria-live="assertive"
+                    className="mb-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm font-semibold text-rose-800"
+                  >
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
@@ -954,6 +965,7 @@ export default function ManageMatches() {
                 >
                   {saving ? 'กำลังบันทึก...' : isEditing ? 'บันทึกการแก้ไข' : 'สร้างแมตช์'}
                 </button>
+                </div>
               </div>
 
             </form>

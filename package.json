@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "ระบบเว็บประกาศและจัดการการแข่งขันบาสเกตบอล (Basketball Tournament Management System)",
   "scripts": {
-    "build": "npm ci --prefix server && npm ci --prefix client && npm --prefix server run prisma:generate && npm --prefix client run build",
+    "build": "npm ci --prefix server && npm ci --prefix client --include=dev && npm --prefix server run prisma:generate && npm --prefix client run build",
     "start": "npm --prefix server start",
     "server": "npm --prefix server run dev",
     "client": "npm --prefix client run dev",

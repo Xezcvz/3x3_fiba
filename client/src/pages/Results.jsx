@@ -50,7 +50,7 @@ export default function Results() {
   const getTeamsInGroup = (groupLetter, category) => {
     return teams
       .filter((team) => team.group === groupLetter && team.category === category)
-      .sort((a, b) => (b.stats?.pts || 0) - (a.stats?.pts || 0) || (b.stats?.diff || 0) - (a.stats?.diff || 0));
+      .sort((a, b) => (a.rankInGroup || Number.MAX_SAFE_INTEGER) - (b.rankInGroup || Number.MAX_SAFE_INTEGER));
   };
 
   const standingsGroups = (selectedCategory === 'all' ? ['รุ่น A', 'รุ่น B'] : [selectedCategory])
@@ -138,7 +138,7 @@ export default function Results() {
             </h2>
           </div>
           <span className="text-xs text-slate-500">
-            * อันดับ 1-2 และอันดับ 3 ที่ดีที่สุด 2 ทีม ได้สิทธิ์ผ่านเข้าสู่รอบ 8 ทีม
+            * จัดอันดับด้วยจำนวนชนะ → ผลพบกันในกลุ่ม → คะแนนเฉลี่ย; อันดับ 1-2 และอันดับ 3 ที่ดีที่สุด 2 ทีมเข้ารอบ 8 ทีม
           </span>
         </div>
 

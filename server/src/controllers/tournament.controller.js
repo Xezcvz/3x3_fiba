@@ -1,4 +1,5 @@
 const prisma = require('../prisma');
+const { rankPoolTeams, compareAcrossPools } = require('../utils/standings');
 
 // Helper to compute team standings in groups for a given category (division)
 async function computeGroupStandings(category = 'รุ่น A') {
@@ -83,38 +84,25 @@ async function computeGroupStandings(category = 'รุ่น A') {
     });
   });
 
-  // Sort each group: Points desc, Diff desc, PointsFor desc, Name asc
-  const sortedGroups = {};
-  for (const [groupName, groupTeams] of Object.entries(grouped)) {
-    groupTeams.sort((a, b) => {
-      if (b.stats.pts !== a.stats.pts) return b.stats.pts - a.stats.pts;
-      if (b.stats.diff !== a.stats.diff) return b.stats.diff - a.stats.diff;
-      if (b.stats.pointsFor !== a.stats.pointsFor) return b.stats.pointsFor - a.stats.pointsFor;
-      return a.name.localeCompare(b.name);
-    });
-
-    sortedGroups[groupName] = groupTeams.map((team, idx) => ({
-      ...team,
-      rankInGroup: idx + 1,
-      seedLabel: `${groupName}${idx + 1}`,
-    }));
-  }
-
-  // Count total and finished group matches
   const groupMatches = await prisma.match.findMany({
     where: {
       ...where,
-      OR: [
-        { round: null },
-        { round: { contains: 'รอบแบ่งกลุ่ม' } },
-        { round: { contains: 'กลุ่ม' } },
-        { round: { contains: 'สาย' } },
-        { round: { contains: 'Pool' } },
-      ],
+      OR: [{ round: null }, { round: { contains: 'รอบแบ่งกลุ่ม' } }, { round: { contains: 'กลุ่ม' } }, { round: { contains: 'สาย' } }, { round: { contains: 'Pool' } }],
     },
-    select: { status: true, homeScore: true, awayScore: true },
+    select: { homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true, status: true },
   });
 
+  const sortedGroups = {};
+  for (const [groupName, groupTeams] of Object.entries(grouped)) {
+    const teamIds = new Set(groupTeams.map((team) => team.id));
+    const matchesInGroup = groupMatches.filter((match) => teamIds.has(match.homeTeamId) && teamIds.has(match.awayTeamId));
+    sortedGroups[groupName] = rankPoolTeams(groupTeams, matchesInGroup).map((team) => ({
+      ...team,
+      seedLabel: `${groupName}${team.rankInGroup}`,
+    }));
+  }
+
+  // Count total and finished group matches from the match set already loaded above.
   const totalGroupMatches = groupMatches.length;
   const finishedGroupMatches = groupMatches.filter(
     (m) => m.status === 'finished' && m.homeScore !== null && m.awayScore !== null
@@ -136,13 +124,7 @@ async function computeGroupStandings(category = 'รุ่น A') {
     if (t) thirdPlaceTeams.push(t);
   });
 
-  // Sort 3rd place teams among each other
-  thirdPlaceTeams.sort((a, b) => {
-    if (b.stats.pts !== a.stats.pts) return b.stats.pts - a.stats.pts;
-    if (b.stats.diff !== a.stats.diff) return b.stats.diff - a.stats.diff;
-    if (b.stats.pointsFor !== a.stats.pointsFor) return b.stats.pointsFor - a.stats.pointsFor;
-    return a.name.localeCompare(b.name);
-  });
+  thirdPlaceTeams.sort(compareAcrossPools);
 
   const qualifiedBest3rdIds = new Set(thirdPlaceTeams.slice(0, 2).map((t) => t.id));
 
@@ -370,10 +352,14 @@ async function generateKnockoutMatches(req, res, next) {
         });
       }
 
+      // Place the two qualified third-place teams so neither faces its own pool winner.
+      const thirdForQf1 = best3rd_2.group !== 'A' && best3rd_1.group !== 'B' ? best3rd_2 : best3rd_1;
+      const thirdForQf3 = thirdForQf1.id === best3rd_1.id ? best3rd_2 : best3rd_1;
+
       qfPairs = [
-        { homeTeamId: a1.id, awayTeamId: best3rd_2.id, venue: 'สนาม 1', timeOffset: 13, label: `รอบ 8 ทีม คู่ที่ 1 (${category}: A1 vs อันดับ 3)` },
+        { homeTeamId: a1.id, awayTeamId: thirdForQf1.id, venue: 'สนาม 1', timeOffset: 13, label: `รอบ 8 ทีม คู่ที่ 1 (${category}: A1 vs อันดับ 3)` },
         { homeTeamId: b2.id, awayTeamId: c2.id, venue: 'สนาม 2', timeOffset: 13.25, label: `รอบ 8 ทีม คู่ที่ 2 (${category}: B2 vs C2)` },
-        { homeTeamId: b1.id, awayTeamId: best3rd_1.id, venue: 'สนาม 1', timeOffset: 13.5, label: `รอบ 8 ทีม คู่ที่ 3 (${category}: B1 vs อันดับ 3)` },
+        { homeTeamId: b1.id, awayTeamId: thirdForQf3.id, venue: 'สนาม 1', timeOffset: 13.5, label: `รอบ 8 ทีม คู่ที่ 3 (${category}: B1 vs อันดับ 3)` },
         { homeTeamId: c1.id, awayTeamId: a2.id, venue: 'สนาม 2', timeOffset: 13.75, label: `รอบ 8 ทีม คู่ที่ 4 (${category}: C1 vs A2)` },
       ];
     }

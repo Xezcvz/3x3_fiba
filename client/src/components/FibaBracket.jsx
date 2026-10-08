@@ -56,10 +56,12 @@ function deriveExpectedSeeds(standings, thirdPlaceComparison, isGroupStageComple
   const c2 = standings['C']?.[1];
   const best3rd1 = thirdPlaceComparison?.[0];
   const best3rd2 = thirdPlaceComparison?.[1];
+  const thirdForQf1 = best3rd2?.group !== 'A' && best3rd1?.group !== 'B' ? best3rd2 : best3rd1;
+  const thirdForQf3 = thirdForQf1?.id === best3rd1?.id ? best3rd2 : best3rd1;
   return {
-    qf1: { home: a1, away: best3rd2, venue: 'สนาม 1' },
+    qf1: { home: a1, away: thirdForQf1, venue: 'สนาม 1' },
     qf2: { home: b2, away: c2, venue: 'สนาม 2' },
-    qf3: { home: b1, away: best3rd1, venue: 'สนาม 1' },
+    qf3: { home: b1, away: thirdForQf3, venue: 'สนาม 1' },
     qf4: { home: c1, away: a2, venue: 'สนาม 2' },
   };
 }
@@ -725,7 +727,7 @@ export default function FibaBracket({
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-amber-900 flex items-center gap-1">
                     <Award className="w-3.5 h-3.5 text-amber-600" />
-                    ตารางอันดับ 3 ที่ดีที่สุด (เอา 2 ทีม)
+                    ตารางอันดับ 3 ที่ดีที่สุด (เอา 2 ทีม · ชนะ/อัตราชนะ แล้วคะแนนเฉลี่ย)
                   </span>
                   <span className="text-[10px] font-bold text-amber-700">Top 2 เข้ารอบ</span>
                 </div>
@@ -745,7 +747,7 @@ export default function FibaBracket({
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0 font-mono">
                         <span>{t.stats.won}W-{t.stats.lost}L</span>
-                        <span>({t.stats.diff > 0 ? `+${t.stats.diff}` : t.stats.diff})</span>
+                        <span>({Number(t.stats.scoringAverage || 0).toFixed(1)} แต้ม/นัด)</span>
                         {isGroupStageComplete && (
                           t.isQualified ? (
                             <span className="text-[9px] font-black bg-emerald-100 text-emerald-700 px-1 py-0.2 rounded">Q</span>

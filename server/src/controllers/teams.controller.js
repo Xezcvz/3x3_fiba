@@ -1,5 +1,6 @@
 const prisma = require('../prisma');
 const { z } = require('zod');
+const { rankPoolTeams } = require('../utils/standings');
 
 const teamSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -43,6 +44,8 @@ async function getTeams(req, res, next) {
         homeMatches: {
           select: {
             id: true,
+            homeTeamId: true,
+            awayTeamId: true,
             homeScore: true,
             awayScore: true,
             status: true,
@@ -52,6 +55,8 @@ async function getTeams(req, res, next) {
         awayMatches: {
           select: {
             id: true,
+            homeTeamId: true,
+            awayTeamId: true,
             homeScore: true,
             awayScore: true,
             status: true,
@@ -112,11 +117,31 @@ async function getTeams(req, res, next) {
           diff: pointsFor - pointsAgainst,
           pts: won * 2 + lost * 1, // standard basketball league points (2 for win, 1 for loss)
           totalMatches,
-        }
+        },
+        _groupStageMatches: [...team.homeMatches, ...team.awayMatches],
       };
     });
 
-    return res.json(teamsWithStats);
+    const groupKeys = new Set(teamsWithStats.map((team) => `${team.category}:${team.group}`));
+    const rankingByTeamId = new Map();
+    for (const key of groupKeys) {
+      const [category, group] = key.split(':');
+      const groupTeams = teamsWithStats.filter((team) => team.category === category && team.group === group);
+      const groupTeamIds = new Set(groupTeams.map((team) => team.id));
+      const matchById = new Map();
+      for (const team of groupTeams) {
+        for (const match of team._groupStageMatches) {
+          if (groupTeamIds.has(match.homeTeamId) && groupTeamIds.has(match.awayTeamId)) matchById.set(match.id, match);
+        }
+      }
+      rankPoolTeams(groupTeams, [...matchById.values()]).forEach((team) => rankingByTeamId.set(team.id, team));
+    }
+
+    return res.json(teamsWithStats.map((team) => {
+      const rankedTeam = rankingByTeamId.get(team.id);
+      const { _groupStageMatches, ...publicTeam } = team;
+      return rankedTeam ? { ...publicTeam, stats: rankedTeam.stats, rankInGroup: rankedTeam.rankInGroup } : publicTeam;
+    }));
   } catch (error) {
     next(error);
   }

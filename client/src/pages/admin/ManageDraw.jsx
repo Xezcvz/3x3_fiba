@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { getTeams, manualDraw, prepareDraw, resetDraw, getTournamentBracket } from '../../services/api';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { getTeams, manualDraw, prepareDraw, spinDraw as requestSpinDraw, cancelDraw, resetDraw, getTournamentBracket } from '../../services/api';
 import FibaBracket from '../../components/FibaBracket';
 import { categoryLabel } from '../../utils/category-label';
 import { useModal } from '../../context/ModalContext';
@@ -16,7 +16,6 @@ import {
   ArrowLeftRight,
   Sparkles,
   CircleDot,
-  Play,
 } from 'lucide-react';
 
 // ─── Group color palette ───────────────────────────────────────────────────
@@ -60,92 +59,131 @@ function TeamPill({ team, group, onRemove, onClick, compact = false }) {
   );
 }
 
-function DrawWheel({ plan, teams, revealed, spinning, onStartSpin, onReveal, onFinish, onCancel, saving }) {
-  const [wheelName, setWheelName] = useState('พร้อมหมุนจับสลาก');
-  const activeResult = revealed.at(-1) || null;
-  const visualSpin = spinning;
-  const remaining = plan.assignments.length - revealed.length;
-  const current = plan.assignments[revealed.length];
+const WHEEL_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#ef4444', '#84cc16'];
 
-  useEffect(() => {
-    if (!spinning) return undefined;
-    const teamNames = teams.map((team) => team.name);
-    let tick = 0;
-    const timer = setInterval(() => {
-      setWheelName(teamNames[tick % teamNames.length] || 'กำลังสุ่ม...');
-      tick += 1;
-    }, 90);
-    const finishTimer = setTimeout(() => {
-      clearInterval(timer);
-      setWheelName(current?.team?.name || 'จับสลากสำเร็จ');
-      onReveal(current);
-    }, 2600);
-    return () => { clearInterval(timer); clearTimeout(finishTimer); };
-  }, [spinning, current, onReveal, teams]);
+function secureRandomIndex(length) {
+  if (length < 1) throw new Error('ไม่มีทีมเหลือให้จับสลาก');
+  const range = 0x1_0000_0000;
+  const limit = Math.floor(range / length) * length;
+  const value = new Uint32Array(1);
+  do { window.crypto.getRandomValues(value); } while (value[0] >= limit);
+  return value[0] % length;
+}
+
+function DrawWheel({ plan, teams, revealed, onReveal, onFinish, onCancel, saving }) {
+  const [spinning, setSpinning] = useState(false);
+  const [wheelRotation, setWheelRotation] = useState(0);
+  const [spinError, setSpinError] = useState('');
+  const timerRef = useRef(null);
+  const activeResult = revealed.at(-1) || null;
+  const remaining = plan.total - revealed.length;
+  const revealedIds = new Set(revealed.map((item) => item.teamId));
+  const remainingTeams = teams.filter((team) => !revealedIds.has(team.id));
+  const segmentSize = 360 / Math.max(remainingTeams.length, 1);
+  const wheelGradient = remainingTeams.length
+    ? `conic-gradient(${remainingTeams.map((_, index) => `${WHEEL_COLORS[index % WHEEL_COLORS.length]} ${index * segmentSize}deg ${(index + 1) * segmentSize}deg`).join(', ')})`
+    : '#1e293b';
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  const spinWheel = async () => {
+    if (spinning || remainingTeams.length === 0) return;
+    setSpinError('');
+    setSpinning(true);
+    try {
+      const { data } = await requestSpinDraw(plan.sessionId);
+      const selectedIndex = remainingTeams.findIndex((team) => team.id === data.teamId);
+      if (selectedIndex < 0) throw new Error('ผลที่ได้ไม่ตรงกับรายชื่อที่เหลือ กรุณาเริ่มรอบใหม่');
+      const centerAngle = (selectedIndex + 0.5) * segmentSize;
+      const currentRotation = wheelRotation % 360;
+      const alignment = ((90 - centerAngle - currentRotation) % 360 + 360) % 360;
+      const targetRotation = wheelRotation + (360 * 6) + alignment;
+      setWheelRotation(targetRotation);
+      timerRef.current = setTimeout(() => {
+        setSpinning(false);
+        onReveal(data);
+      }, 5200);
+    } catch (error) {
+      setSpinError(error.response?.data?.message || error.message || 'หมุนวงล้อไม่สำเร็จ');
+      setSpinning(false);
+    }
+  };
 
   const resultGroup = activeResult?.group;
   const color = getColor(resultGroup || 'A');
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
-      <section role="dialog" aria-modal="true" aria-label="วงล้อจับสลากสด" className="w-full max-w-2xl rounded-3xl bg-white p-5 shadow-2xl sm:p-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-3 backdrop-blur-sm sm:p-4">
+      <section role="dialog" aria-modal="true" aria-label="วงล้อจับสลากสด" className="max-h-[96vh] w-full max-w-4xl overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl sm:p-7">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-primary-600">Live group draw</p>
             <h2 className="mt-1 text-2xl font-black text-slate-900">วงล้อจับสลากสด</h2>
-            <p className="mt-1 text-sm text-slate-500">เปิดผลทีละทีม · เหลือ {remaining} ทีม</p>
+            <p className="mt-1 text-sm text-slate-500">หมุนเองทีละทีม · เหลือ {remaining} ทีม</p>
           </div>
           <button onClick={onCancel} disabled={saving || spinning} className="rounded-xl px-3 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 disabled:opacity-40">ปิด</button>
         </div>
 
-        <div className="my-7 rounded-3xl bg-gradient-to-br from-indigo-950 via-blue-900 to-violet-800 p-5 text-center text-white sm:p-8">
-          <div className="relative mx-auto mb-5 w-fit pt-3">
-            <div className="absolute left-1/2 top-0 z-10 h-0 w-0 -translate-x-1/2 border-x-[13px] border-t-[24px] border-x-transparent border-t-amber-300 drop-shadow-md" />
-            <div className="relative h-56 w-56">
-              <div className={`absolute inset-0 flex items-center justify-center rounded-full border-[10px] border-amber-300 shadow-xl shadow-black/30 ${visualSpin ? 'animate-[spin_0.65s_linear_infinite]' : ''}`} style={{ background: 'conic-gradient(#3b82f6 0deg 120deg, #8b5cf6 120deg 240deg, #10b981 240deg 360deg)' }}>
-              <span className="absolute top-5 text-sm font-black text-white drop-shadow">A</span>
-              <span className="absolute bottom-8 left-8 text-sm font-black text-white drop-shadow">B</span>
-              <span className="absolute bottom-8 right-8 text-sm font-black text-white drop-shadow">C</span>
-              </div>
-              <div className="absolute inset-10 z-[1] flex items-center justify-center rounded-full border-4 border-white/80 bg-slate-950/95 px-3 text-center shadow-inner">
-                <span className={`line-clamp-3 text-base font-black leading-tight sm:text-lg ${visualSpin ? 'animate-pulse' : ''}`}>{wheelName}</span>
+        <div className="my-5 grid items-center gap-5 lg:grid-cols-[minmax(0,1fr)_260px]">
+          <div className="rounded-3xl bg-gradient-to-br from-indigo-950 via-blue-900 to-violet-800 p-4 text-center text-white sm:p-6">
+            <div className="relative mx-auto w-fit py-2">
+              <div className="absolute -right-3 top-1/2 z-20 h-0 w-0 -translate-y-1/2 border-y-[15px] border-r-[27px] border-y-transparent border-r-cyan-300 drop-shadow-lg" />
+              <div className="relative h-[min(72vw,58vh,440px)] w-[min(72vw,58vh,440px)]">
+                <div className="absolute inset-0 overflow-hidden rounded-full border-[9px] border-white shadow-2xl shadow-black/40" style={{ background: wheelGradient, transform: `rotate(${wheelRotation}deg)`, transition: spinning ? 'transform 5.2s cubic-bezier(0.12, 0.72, 0.12, 1)' : 'none' }}>
+                  {remainingTeams.map((team, index) => {
+                    const angle = (index + 0.5) * segmentSize;
+                    const radius = remainingTeams.length > 10 ? 38 : 35;
+                    const labelWidth = Math.max(16, 2 * radius * Math.sin((segmentSize / 2) * (Math.PI / 180)) * 0.9);
+                    const radians = (angle - 90) * (Math.PI / 180);
+                    const left = 50 + radius * Math.cos(radians);
+                    const top = 50 + radius * Math.sin(radians);
+                    let textAngle = angle;
+                    if (textAngle > 90 && textAngle < 270) textAngle += 180;
+                    return <span key={team.id} className="absolute z-[1] -translate-x-1/2 -translate-y-1/2 overflow-hidden text-ellipsis whitespace-nowrap text-[clamp(9px,1.2vw,14px)] font-black text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ left: `${left}%`, top: `${top}%`, maxWidth: `${labelWidth}%`, transform: `translate(-50%, -50%) rotate(${textAngle}deg)` }}>{team.name}</span>;
+                  })}
+                </div>
+                <button type="button" onClick={spinWheel} disabled={spinning || saving || remaining === 0} aria-label="กดหมุนวงล้อจับสลาก" className="absolute inset-[38%] z-10 flex items-center justify-center rounded-full border-[5px] border-white bg-slate-950/95 px-2 text-center text-xs font-black leading-tight text-white shadow-xl transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-80 sm:text-sm">
+                  {spinning ? 'กำลังหมุน…' : 'กดเพื่อหมุน'}
+                </button>
               </div>
             </div>
+            {activeResult ? (
+              <div className="animate-fade-in">
+                <p className="text-sm text-blue-100">ผลการหมุนครั้งล่าสุด</p>
+                <div className="mx-auto mt-1 text-xl font-black sm:text-2xl">{activeResult.team.name}</div>
+                <div className={`mx-auto mt-2 inline-flex items-center gap-2 rounded-full ${color.bg} px-6 py-2 text-lg font-black shadow-lg`}>
+                  <CircleDot className="h-5 w-5" /> เข้าสาย {resultGroup}
+                </div>
+              </div>
+            ) : <p className="text-sm text-blue-100">{spinning ? 'วงล้อกำลังหมุน...' : `เหลือ ${remaining} ทีม · คลิกกลางวงล้อเพื่อจับทีละทีม`}</p>}
+            {spinError && <p role="alert" className="mt-3 rounded-lg bg-rose-100 px-3 py-2 text-sm font-semibold text-rose-800">{spinError}</p>}
           </div>
-          {activeResult ? (
-            <div className="animate-fade-in">
-              <p className="text-sm text-blue-100">ทีมที่จับได้เข้าสู่</p>
-              <div className={`mx-auto mt-2 inline-flex items-center gap-2 rounded-full ${color.bg} px-6 py-2 text-xl font-black shadow-lg`}>
-                <CircleDot className="h-5 w-5" /> สาย {resultGroup}
-              </div>
+
+          <aside className="space-y-4">
+            <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
+              {Object.keys(plan.groupCounts).map((group) => (
+                <div key={group} className={`rounded-xl border p-3 text-center lg:text-left ${getColor(group).light} ${getColor(group).border}`}>
+                  <p className={`text-sm font-black ${getColor(group).text}`}>สาย {group}</p>
+                  <p className="mt-1 text-xs text-slate-600">ออกแล้ว {revealed.filter((item) => item.group === group).length} / {plan.groupCounts[group]} ทีม</p>
+                </div>
+              ))}
             </div>
-          ) : <p className="text-sm text-blue-100">{visualSpin ? 'วงล้อกำลังหมุน...' : 'พร้อมแล้ว เริ่มหมุนเพื่อเปิดทีมแรก'}</p>}
+            <div className="max-h-44 overflow-y-auto rounded-xl bg-slate-50 p-3 lg:max-h-[36vh]">
+              <p className="mb-2 text-xs font-bold text-slate-500">ผลที่ออกแล้ว ({revealed.length})</p>
+              {revealed.length === 0 ? <p className="text-xs text-slate-400">กดหมุนเพื่อเริ่มจับทีมแรก</p> : revealed.map((item, index) => <div key={item.teamId} className="flex items-center justify-between gap-2 border-b border-slate-200 py-1.5 text-xs last:border-0"><span className="min-w-0 truncate text-slate-700">{index + 1}. {item.team.name}</span><span className={`shrink-0 font-bold ${getColor(item.group).text}`}>สาย {item.group}</span></div>)}
+            </div>
+          </aside>
         </div>
 
-        <div className="mb-6 grid grid-cols-3 gap-2 sm:gap-3">
-          {Object.keys(plan.groupCounts).map((group) => (
-            <div key={group} className={`rounded-xl border p-3 text-center ${getColor(group).light} ${getColor(group).border}`}>
-              <p className={`text-sm font-black ${getColor(group).text}`}>สาย {group}</p>
-              <p className="mt-1 text-xs text-slate-600">เปิดแล้ว {revealed.filter((item) => item.group === group).length} / {plan.groupCounts[group]}</p>
-            </div>
-          ))}
-        </div>
-
-        {remaining > 0 ? (
-          <button onClick={onStartSpin} disabled={spinning || saving} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary-600 to-indigo-600 px-5 py-3.5 font-bold text-white shadow-lg disabled:opacity-50">
-            <Play className="h-5 w-5" /> {revealed.length === 0 ? 'หมุนทีมแรก' : `หมุนทีมถัดไป (${revealed.length + 1}/${plan.assignments.length})`}
-          </button>
-        ) : (
-          <button onClick={onFinish} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3.5 font-bold text-white shadow-lg disabled:opacity-50">
+        {remaining === 0 ? (
+          <button onClick={onFinish} disabled={saving || spinning} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3.5 font-bold text-white shadow-lg disabled:opacity-50">
             {saving ? 'กำลังบันทึกผล...' : <><Check className="h-5 w-5" /> ยืนยันผลและบันทึกการจัดสาย</>}
           </button>
-        )}
-        {revealed.length > 0 && <div className="mt-5 max-h-36 space-y-1 overflow-y-auto rounded-xl bg-slate-50 p-3">
-          {revealed.map((item, index) => <div key={item.teamId} className="flex items-center justify-between text-xs text-slate-600"><span>{index + 1}. {item.team.name}</span><span className={`font-bold ${getColor(item.group).text}`}>สาย {item.group}</span></div>)}
-        </div>}
+        ) : <p className="text-center text-sm font-semibold text-slate-500">คลิกปุ่มกลางวงล้อเพื่อหมุนครั้งที่ {revealed.length + 1} / {plan.total}</p>}
       </section>
     </div>
   );
 }
+
 
 // ─── Visual Group Bracket ─────────────────────────────────────────────────
 function GroupBracket({ groups }) {
@@ -278,7 +316,6 @@ export default function ManageDraw() {
   const [saving, setSaving] = useState(false);
   const [drawPlan, setDrawPlan] = useState(null);
   const [revealedDraw, setRevealedDraw] = useState([]);
-  const [spinInProgress, setSpinInProgress] = useState(false);
   const [bracketData, setBracketData] = useState(null);
 
   const [category, setCategory] = useState('รุ่น A');
@@ -335,12 +372,9 @@ export default function ManageDraw() {
 
     try {
       const res = await prepareDraw({ groupCount, category });
-      const teamById = new Map(res.data.teams.map((team) => [team.id, team]));
-      const assignments = res.data.assignments.map((assignment) => ({ ...assignment, team: teamById.get(assignment.teamId) }));
-      const groupCounts = Object.fromEntries(Array.from({ length: groupCount }, (_, index) => [String.fromCharCode(65 + index), 0]));
-      assignments.forEach((assignment) => { groupCounts[assignment.group] += 1; });
+      setTeams(res.data.teams);
       setRevealedDraw([]);
-      setDrawPlan({ assignments, groupCounts });
+      setDrawPlan({ sessionId: res.data.sessionId, groupCounts: res.data.groupCounts, total: res.data.teams.length });
     } catch (err) {
       await alert({
         title: 'เกิดข้อผิดพลาด',
@@ -352,14 +386,13 @@ export default function ManageDraw() {
 
   const revealNextTeam = useCallback((team) => {
     if (team) setRevealedDraw((current) => [...current, team]);
-    setSpinInProgress(false);
   }, []);
 
   const finishDraw = async () => {
     try {
       setSaving(true);
-      const assignments = drawPlan.assignments.map(({ teamId, group }) => ({ teamId, group }));
-      await manualDraw(assignments, category);
+      const assignments = revealedDraw.map(({ teamId, group }) => ({ teamId, group }));
+      await manualDraw(assignments, category, drawPlan.sessionId);
       setDrawPlan(null);
       setRevealedDraw([]);
       await loadData(category);
@@ -446,6 +479,12 @@ export default function ManageDraw() {
   };
 
   const hasAnyGroup = Object.keys(groups).some(k => k !== 'Unassigned' && groups[k]?.length > 0);
+  const changeCategory = (nextCategory) => {
+    if (nextCategory === category) return;
+    setCategory(nextCategory);
+    setDrawPlan(null);
+    setRevealedDraw([]);
+  };
 
   if (loading) {
     return (
@@ -464,14 +503,10 @@ export default function ManageDraw() {
         plan={drawPlan}
         teams={teams}
         revealed={revealedDraw}
-        spinning={spinInProgress}
         saving={saving}
-        onStartSpin={() => {
-          if (!spinInProgress && revealedDraw.length < drawPlan.assignments.length) setSpinInProgress(true);
-        }}
         onReveal={revealNextTeam}
         onFinish={finishDraw}
-        onCancel={() => { setDrawPlan(null); setRevealedDraw([]); setSpinInProgress(false); }}
+        onCancel={() => { cancelDraw(drawPlan.sessionId).catch(() => {}); setDrawPlan(null); setRevealedDraw([]); }}
       />}
 
       <div className="space-y-8 pb-16">
@@ -545,6 +580,16 @@ export default function ManageDraw() {
               วงล้อจับสลากสด (จับทีละทีม)
             </h2>
             <div className="flex flex-wrap items-end gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5">รุ่นการแข่งขัน</label>
+                <div className="flex gap-2">
+                  {['รุ่น A', 'รุ่น B'].map((division) => (
+                    <button key={division} onClick={() => changeCategory(division)} className={`rounded-xl border-2 px-3 py-2 text-sm font-bold transition-all ${category === division ? 'border-primary-600 bg-primary-600 text-white shadow-md' : 'border-slate-200 bg-white text-slate-600 hover:border-primary-300'}`}>
+                      {categoryLabel(division)}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1.5">จำนวนสาย</label>
                 <div className="flex gap-2">
@@ -737,8 +782,7 @@ export default function ManageDraw() {
                 onRefresh={() => loadData(category)}
                 activeCategory={category}
                 onCategoryChange={(newCat) => {
-                  setCategory(newCat);
-                  loadData(newCat);
+                  changeCategory(newCat);
                 }}
               />
             </div>

@@ -1,5 +1,5 @@
 const prisma = require('../prisma');
-const { createDrawPlan, validateLockedAssignments } = require('../utils/draw-rules');
+const { createDrawPlan, shuffleSecure, validateLockedAssignments } = require('../utils/draw-rules');
 
 async function prepareDraw(req, res, next) {
   try {
@@ -14,10 +14,86 @@ async function prepareDraw(req, res, next) {
       });
       if (linkedMatches > 0) return res.status(409).json({ message: 'เริ่มจับสายใหม่ไม่ได้เมื่อมีประวัติการแข่งขันของทีมเหล่านี้แล้ว' });
     }
+
     const assignments = createDrawPlan(teams, groupCount, category);
-    return res.json({ assignments, teams: teams.map(({ id, name, category: teamCategory, logoUrl }) => ({ id, name, category: teamCategory, logoUrl })) });
+    const groupCounts = assignments.reduce((counts, assignment) => {
+      counts[assignment.group] = (counts[assignment.group] || 0) + 1;
+      return counts;
+    }, {});
+    const now = new Date();
+    await prisma.drawSession.deleteMany({ where: { expiresAt: { lt: now } } });
+    const session = await prisma.drawSession.create({
+      data: {
+        category,
+        assignments,
+        drawOrder: shuffleSecure(teamIds),
+        drawIndex: 0,
+        expiresAt: new Date(now.getTime() + 2 * 60 * 60 * 1000),
+      },
+    });
+
+    return res.json({
+      sessionId: session.id,
+      groupCounts,
+      teams: teams.map(({ id, name, category: teamCategory, logoUrl }) => ({ id, name, category: teamCategory, logoUrl })),
+    });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
+    next(error);
+  }
+}
+
+async function spinDraw(req, res, next) {
+  try {
+    const { sessionId } = req.body || {};
+    if (typeof sessionId !== 'string' || sessionId.length < 16 || sessionId.length > 64) {
+      return res.status(400).json({ message: 'รอบจับสลากไม่ถูกต้อง กรุณาเริ่มใหม่' });
+    }
+
+    const result = await prisma.$transaction(async (transaction) => {
+      const session = await transaction.drawSession.findUnique({ where: { id: sessionId } });
+      if (!session) throw Object.assign(new Error('ไม่พบรอบจับสลากนี้ กรุณาเริ่มใหม่'), { statusCode: 404 });
+      if (session.expiresAt <= new Date()) {
+        throw Object.assign(new Error('รอบจับสลากหมดเวลาแล้ว กรุณาเริ่มใหม่'), { statusCode: 410 });
+      }
+
+      const order = Array.isArray(session.drawOrder) ? session.drawOrder : [];
+      const assignments = Array.isArray(session.assignments) ? session.assignments : [];
+      if (session.drawIndex >= order.length) throw Object.assign(new Error('จับครบทุกทีมแล้ว'), { statusCode: 409 });
+      const teamId = Number(order[session.drawIndex]);
+      const assignment = assignments.find((item) => Number(item.teamId) === teamId);
+      if (!assignment) throw Object.assign(new Error('ข้อมูลรอบจับสลากไม่ครบ กรุณาเริ่มใหม่'), { statusCode: 409 });
+
+      const claimed = await transaction.drawSession.updateMany({
+        where: { id: sessionId, drawIndex: session.drawIndex },
+        data: { drawIndex: { increment: 1 } },
+      });
+      if (claimed.count !== 1) throw Object.assign(new Error('มีการกดหมุนซ้อนกัน กรุณากดหมุนอีกครั้ง'), { statusCode: 409 });
+
+      const team = await transaction.team.findFirst({
+        where: { id: teamId, ...(session.category === 'all' ? {} : { category: session.category }) },
+        select: { id: true, name: true, logoUrl: true, category: true },
+      });
+      if (!team) throw Object.assign(new Error('รายชื่อทีมเปลี่ยนระหว่างจับสลาก กรุณาเริ่มรอบใหม่'), { statusCode: 409 });
+      return { teamId, group: assignment.group, team };
+    });
+
+    return res.json(result);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
+    next(error);
+  }
+}
+
+async function cancelDraw(req, res, next) {
+  try {
+    const { sessionId } = req.body || {};
+    if (typeof sessionId !== 'string' || sessionId.length < 16 || sessionId.length > 64) {
+      return res.status(400).json({ message: 'รอบจับสลากไม่ถูกต้อง' });
+    }
+    await prisma.drawSession.deleteMany({ where: { id: sessionId } });
+    return res.json({ message: 'ยกเลิกรอบจับสลากแล้ว' });
+  } catch (error) {
     next(error);
   }
 }
@@ -94,7 +170,7 @@ async function autoDraw(req, res, next) {
 // POST /api/teams/draw/manual — Manual draw: assign specific teams to specific groups
 async function manualDraw(req, res, next) {
   try {
-    const { assignments, category = 'all' } = req.body || {};
+    const { assignments, category = 'all', sessionId } = req.body || {};
     if (!['all', 'รุ่น A', 'รุ่น B'].includes(category)) return res.status(400).json({ message: 'รุ่นการแข่งขันไม่ถูกต้อง' });
     // assignments: [{ teamId, group }, ...]
     if (!Array.isArray(assignments) || assignments.length === 0 || assignments.length > 100) {
@@ -117,6 +193,28 @@ async function manualDraw(req, res, next) {
     }
     const where = category === 'all' ? {} : { category };
     const updated = await prisma.$transaction(async (transaction) => {
+      let drawSession = null;
+      if (sessionId !== undefined) {
+        if (typeof sessionId !== 'string' || sessionId.length < 16 || sessionId.length > 64) {
+          throw Object.assign(new Error('รอบจับสลากไม่ถูกต้อง กรุณาเริ่มใหม่'), { statusCode: 400 });
+        }
+        drawSession = await transaction.drawSession.findUnique({ where: { id: sessionId } });
+        if (!drawSession || drawSession.expiresAt <= new Date()) {
+          throw Object.assign(new Error('รอบจับสลากหมดเวลาแล้ว กรุณาเริ่มใหม่'), { statusCode: 409 });
+        }
+        if (drawSession.category !== category) {
+          throw Object.assign(new Error('รุ่นการแข่งขันไม่ตรงกับรอบจับสลาก'), { statusCode: 409 });
+        }
+        const drawOrder = Array.isArray(drawSession.drawOrder) ? drawSession.drawOrder : [];
+        const planned = Array.isArray(drawSession.assignments) ? drawSession.assignments : [];
+        if (drawSession.drawIndex !== drawOrder.length || assignments.length !== planned.length) {
+          throw Object.assign(new Error('ต้องหมุนให้ครบทุกทีมก่อนบันทึกผล'), { statusCode: 409 });
+        }
+        const plannedById = new Map(planned.map((item) => [Number(item.teamId), item.group]));
+        if (assignments.some((item) => plannedById.get(Number(item.teamId)) !== item.group)) {
+          throw Object.assign(new Error('ผลที่ส่งมาไม่ตรงกับผลการจับสลาก กรุณาเริ่มรอบใหม่'), { statusCode: 409 });
+        }
+      }
       const matchingTeams = await transaction.team.findMany({ where });
       const matchingIds = new Set(matchingTeams.map((team) => team.id));
       if (matchingTeams.length !== teamIds.length || teamIds.some((teamId) => !matchingIds.has(teamId))) {
@@ -129,6 +227,7 @@ async function manualDraw(req, res, next) {
       for (const { teamId, group } of assignments) {
         await transaction.team.update({ where: { id: Number(teamId) }, data: { group: group || null } });
       }
+      if (drawSession) await transaction.drawSession.delete({ where: { id: sessionId } });
       return transaction.team.findMany({ where, orderBy: [{ group: 'asc' }, { name: 'asc' }] });
     });
     const grouped = updated.reduce((acc, team) => {
@@ -165,4 +264,4 @@ async function resetDraw(req, res, next) {
   }
 }
 
-module.exports = { getGroups, prepareDraw, autoDraw, manualDraw, resetDraw };
+module.exports = { getGroups, prepareDraw, spinDraw, cancelDraw, autoDraw, manualDraw, resetDraw };

@@ -8,7 +8,8 @@ import {
   deleteTeam,
   resetDraw,
   resetAllTeams,
-  seedTournament24,
+  getRosterResetPreview,
+  resetToOfficialRoster,
 } from '../../services/api';
 import { useModal } from '../../context/ModalContext';
 import {
@@ -207,30 +208,41 @@ export default function ManageTeams() {
     }
   };
 
-  const handleSeed24Teams = async () => {
-    const isConfirmed = await confirm({
-      title: '⚡ รีเซ็ตเป็นชุดทีมมาตรฐาน 24 ทีม',
-      message: 'ระบบจะสร้างทีมแข่งขัน 24 ทีม (รุ่น A = 12 ทีม, รุ่น B = 12 ทีม) แบ่งกลุ่ม A, B, C กลุ่มละ 4 ทีม พร้อมโปรแกรมการแข่งขัน 36 แมตช์ 2 สนาม',
-      confirmText: 'สร้าง 24 ทีมมาตรฐาน',
-      cancelText: 'ยกเลิก',
-      type: 'info',
-    });
-
-    if (!isConfirmed) return;
-
+  const handleResetToOfficialRoster = async () => {
     try {
       setResetting(true);
-      const res = await seedTournament24();
+      const previewResponse = await getRosterResetPreview();
+      const preview = previewResponse.data;
+      const isConfirmed = await confirm({
+        title: '⚠️ ลบข้อมูลเดิมและโหลดรายชื่อทีมจริง',
+        message: `รายการที่จะถูกลบถาวร:
+• ทีมเดิม ${preview.teamCount} ทีม
+• ตารางแข่งขันทั้งหมด ${preview.matchCount} นัด (มีคะแนนแล้ว ${preview.matchesWithScores} นัด)
+• ผลการแข่งขันและสายที่จัดไว้
+
+จากนั้นระบบจะเพิ่มรายชื่อใหม่ 24 ทีม: U18 12 ทีม และบุคคลภายนอก 12 ทีม (รวม RMUTT)
+
+บัญชีแอดมินและข่าวประกาศจะยังอยู่ แต่ข้อมูลทีม/ตาราง/ผลเดิมจะกู้คืนจากหน้าเว็บไม่ได้`,
+        confirmText: 'ลบข้อมูลเดิมและโหลดรายชื่อใหม่',
+        cancelText: 'ยกเลิก',
+        type: 'danger',
+      });
+      if (!isConfirmed) return;
+
+      const result = await resetToOfficialRoster(preview.resetToken);
       await showAlert({
-        title: 'สำเร็จ 🎉',
-        message: res.data?.message || 'โหลดชุดทีมและตารางแข่งขัน 24 ทีมเรียบร้อยแล้ว',
+        title: 'รีเซ็ตข้อมูลสำเร็จ',
+        message: `${result.data.message}
+ลบ ${result.data.deletedTeams} ทีม และ ${result.data.deletedMatches} นัด; เพิ่ม ${result.data.createdTeams} ทีมใหม่
+
+กลับไปที่ Group Draw แล้วเริ่มจับสลากได้เลย`,
         type: 'success',
       });
       await fetchTeams();
     } catch (err) {
       await showAlert({
-        title: 'เกิดข้อผิดพลาด',
-        message: err.response?.data?.message || 'ไม่สามารถสร้างชุดทีมตัวอย่างได้',
+        title: 'รีเซ็ตไม่สำเร็จ',
+        message: err.response?.data?.message || 'โหลดข้อมูลตัวอย่างไม่ได้ กรุณาลองใหม่',
         type: 'error',
       });
     } finally {
@@ -333,18 +345,19 @@ export default function ManageTeams() {
                   type="button"
                   onClick={() => {
                     setShowResetMenu(false);
-                    handleSeed24Teams();
+                    handleResetToOfficialRoster();
                   }}
-                  className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-indigo-50 text-slate-700 hover:text-indigo-800 text-xs font-medium transition-colors flex items-start gap-2.5"
+                  className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-rose-50 text-slate-700 hover:text-rose-800 text-xs font-medium transition-colors flex items-start gap-2.5"
                 >
-                  <Sparkles className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
+                  <Sparkles className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold block text-indigo-700">โหลดชุดทีมมาตรฐาน 24 ทีม</span>
+                    <span className="font-bold block text-rose-700">ล้างข้อมูลเดิมและโหลดรายชื่อจริง</span>
                     <span className="text-[11px] text-slate-500">
-                      สร้างทีมตัวอย่าง 24 ทีม (U18 และบุคคลภายนอก) พร้อมตารางแข่ง
+                      ลบทีม ตาราง และผลเดิม แล้วเพิ่ม U18 กับบุคคลภายนอก 24 ทีม
                     </span>
                   </div>
                 </button>
+
 
                 <div className="border-t border-slate-100 my-1" />
 

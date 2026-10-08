@@ -34,12 +34,16 @@ export const createTeam = (data) => api.post('/teams', data);
 export const updateTeam = (id, data) => api.put(`/teams/${id}`, data);
 export const deleteTeam = (id) => api.delete(`/teams/${id}`);
 export const resetAllTeams = (category = 'all') => api.post('/teams/reset-all', { category });
+export const getRosterResetPreview = () => api.get('/teams/reset-roster/preview');
+export const resetToOfficialRoster = (resetToken) => api.post('/teams/reset-roster', { resetToken });
 
 // Draw API
 export const getGroups = () => api.get('/teams/groups');
 export const autoDraw = (data) => api.post('/teams/draw/auto', data);
 export const prepareDraw = (data) => api.post('/teams/draw/prepare', data);
-export const manualDraw = (assignments, category = 'all') => api.post('/teams/draw/manual', { assignments, category });
+export const spinDraw = (sessionId) => api.post('/teams/draw/spin', { sessionId });
+export const cancelDraw = (sessionId) => api.post('/teams/draw/cancel', { sessionId });
+export const manualDraw = (assignments, category = 'all', sessionId) => api.post('/teams/draw/manual', { assignments, category, ...(sessionId ? { sessionId } : {}) });
 export const resetDraw = (category = 'all') => api.post('/teams/draw/reset', { category });
 
 // Matches API

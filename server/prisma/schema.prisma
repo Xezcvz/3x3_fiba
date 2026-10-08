@@ -65,3 +65,15 @@ model Admin {
   name      String?  @default("Tournament Administrator")
   createdAt DateTime @default(now())
 }
+
+model DrawSession {
+  id          String   @id @default(uuid())
+  category    String
+  assignments Json
+  drawOrder   Json
+  drawIndex   Int      @default(0)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([expiresAt])
+}

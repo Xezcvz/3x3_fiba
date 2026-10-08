@@ -91,4 +91,4 @@ function validateLockedAssignments(teams, assignments) {
     : 'ทีม Hae Chi และทีมที่ล็อกทั้ง 3 ทีมต้องอยู่สายเดียวกัน';
 }
 
-module.exports = { LOCKED_U18_TEAMS, createDrawPlan, validateLockedAssignments };
+module.exports = { LOCKED_U18_TEAMS, shuffleSecure, createDrawPlan, validateLockedAssignments };

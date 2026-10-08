@@ -174,7 +174,11 @@ export default function ManageMatches() {
     e.preventDefault();
     setFormError('');
 
-    if (parseInt(homeTeamId, 10) === parseInt(awayTeamId, 10)) {
+    if (!homeTeamId || !awayTeamId) {
+      setFormError('กรุณาเลือกทีมเจ้าบ้านและทีมเยือน');
+      return;
+    }
+    if (Number(homeTeamId) === Number(awayTeamId)) {
       setFormError('ทีมเหย้าและทีมเยือนต้องไม่ใช่ทีมเดียวกัน');
       return;
     }
@@ -185,8 +189,36 @@ export default function ManageMatches() {
       setFormError('แมตช์รอบแบ่งกลุ่มต้องเลือกทีมจากกลุ่มเดียวกัน');
       return;
     }
-    if (status === 'upcoming' && (onePtHome !== '' || onePtAway !== '' || twoPtHome !== '' || twoPtAway !== '')) {
-      setFormError('แมตช์ที่ยังไม่เริ่มต้องไม่มีข้อมูลคะแนน');
+    const hasBreakdown = [onePtHome, onePtAway, twoPtHome, twoPtAway].some((value) => value !== '');
+    if (status === 'upcoming' && (homeScore !== '' || awayScore !== '' || hasBreakdown)) {
+      setFormError('แมตช์ที่ยังไม่เริ่มต้องไม่มีคะแนน กรุณาลบคะแนนหรือเปลี่ยนสถานะแมตช์');
+      return;
+    }
+    if (status === 'live' && (homeScore === '' || awayScore === '')) {
+      setFormError('แมตช์สดต้องใส่คะแนนทั้งสองทีมก่อนบันทึก');
+      return;
+    }
+    if (status === 'finished' && (homeScore === '' || awayScore === '') && !hasBreakdown) {
+      setFormError('แมตช์ที่จบแล้วต้องใส่คะแนนทั้งสองทีม หรือกรอกรายละเอียดแต้ม 1/2 คะแนน');
+      return;
+    }
+    if (hasBreakdown && [onePtHome, onePtAway, twoPtHome, twoPtAway].some((value) => value === '')) {
+      setFormError('กรุณากรอกรายละเอียดแต้ม 1 และ 2 คะแนนให้ครบทั้งสองทีม หรือเว้นว่างทั้งหมด');
+      return;
+    }
+
+    const derivedHomeScore = hasBreakdown ? Number(onePtHome) + Number(twoPtHome) * 2 : null;
+    const derivedAwayScore = hasBreakdown ? Number(onePtAway) + Number(twoPtAway) * 2 : null;
+    if (hasBreakdown && homeScore !== '' && Number(homeScore) !== derivedHomeScore) {
+      setFormError(`คะแนนทีมเจ้าบ้านไม่ตรงกับรายละเอียดแต้ม (${derivedHomeScore} แต้ม)`);
+      return;
+    }
+    if (hasBreakdown && awayScore !== '' && Number(awayScore) !== derivedAwayScore) {
+      setFormError(`คะแนนทีมเยือนไม่ตรงกับรายละเอียดแต้ม (${derivedAwayScore} แต้ม)`);
+      return;
+    }
+    if (status === 'finished' && Number(homeScore || derivedHomeScore) === Number(awayScore || derivedAwayScore)) {
+      setFormError('แมตช์ 3×3 ที่จบแล้วต้องมีผู้ชนะ คะแนนทั้งสองทีมจึงห้ามเสมอกัน');
       return;
     }
 
@@ -209,8 +241,8 @@ export default function ManageMatches() {
       venue,
       status,
       round,
-      homeScore: homeScore !== '' ? parseInt(homeScore, 10) : null,
-      awayScore: awayScore !== '' ? parseInt(awayScore, 10) : null,
+      homeScore: homeScore !== '' ? Number(homeScore) : (derivedHomeScore ?? null),
+      awayScore: awayScore !== '' ? Number(awayScore) : (derivedAwayScore ?? null),
       quarterScores: statsData,
     };
 

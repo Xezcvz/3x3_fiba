@@ -229,8 +229,10 @@ async function updateMatch(req, res, next) {
     const details = Object.hasOwn(updates, 'quarterScores')
       ? updates.quarterScores
       : parseScoreDetails(existing.quarterScores);
-    const homeScoreFromDetails = Object.hasOwn(updates, 'quarterScores') ? scoreFromDetails(details, 'Home') : null;
-    const awayScoreFromDetails = Object.hasOwn(updates, 'quarterScores') ? scoreFromDetails(details, 'Away') : null;
+    const hasCompleteBreakdown = details
+      && ['onePtHome', 'onePtAway', 'twoPtHome', 'twoPtAway'].every((key) => Number.isInteger(details[key]));
+    const homeScoreFromDetails = hasCompleteBreakdown ? scoreFromDetails(details, 'Home') : null;
+    const awayScoreFromDetails = hasCompleteBreakdown ? scoreFromDetails(details, 'Away') : null;
     const homeScore = homeScoreFromDetails ?? (updates.homeScore !== undefined ? updates.homeScore : existing.homeScore);
     const awayScore = awayScoreFromDetails ?? (updates.awayScore !== undefined ? updates.awayScore : existing.awayScore);
     const status = updates.status ?? existing.status;

@@ -1,9 +1,19 @@
 const { z } = require('zod');
 
-const nullableCount = z.union([
-  z.number().int().min(0).max(300),
-  z.null(),
-]).optional();
+// Browser number inputs send numeric values as strings; coerce them at the API boundary.
+const nullableCount = z.preprocess(
+  (value) => (value === '' ? null : (typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value)),
+  z.union([z.number().int().min(0).max(300), z.null()]).optional()
+);
+
+const nullableInputCount = z.preprocess(
+  (value) => (value === '' ? null : value),
+  z.union([
+    z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(0).max(300)),
+    z.number().int().min(0).max(300),
+    z.null(),
+  ]).optional()
+);
 
 const scoreDetailsSchema = z.preprocess((value) => {
   if (typeof value !== 'string') return value;
@@ -26,8 +36,8 @@ const baseMatchSchema = z.object({
   venue: z.string().trim().min(1).max(120),
   status: z.enum(['upcoming', 'live', 'finished']),
   round: z.string().trim().min(1).max(120),
-  homeScore: z.union([z.number().int().min(0).max(300), z.null()]).optional(),
-  awayScore: z.union([z.number().int().min(0).max(300), z.null()]).optional(),
+  homeScore: nullableInputCount,
+  awayScore: nullableInputCount,
   quarterScores: scoreDetailsSchema.optional(),
 }).strict();
 

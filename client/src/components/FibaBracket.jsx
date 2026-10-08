@@ -615,8 +615,17 @@ export default function FibaBracket({
                   </span>
                 </div>
               </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300">
-                เอา 8 ทีมเข้ารอบ
+              <span
+                title={isGroupStageComplete ? 'คัดทีมเข้ารอบจากผลการแข่งขันรอบแบ่งกลุ่มครบแล้ว' : 'ระบบจะคัดทีมเข้ารอบเมื่อการแข่งขันรอบแบ่งกลุ่มครบทุกนัด'}
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                  isGroupStageComplete
+                    ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}
+              >
+                {isGroupStageComplete
+                  ? `เข้ารอบแล้ว ${qualifiedTeams.length} ทีม`
+                  : `รอผลกลุ่ม ${groupStageStatus.finishedMatches || 0}/${groupStageStatus.totalMatches || 18} นัด`}
               </span>
             </div>
 

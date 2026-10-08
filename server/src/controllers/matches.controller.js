@@ -257,7 +257,11 @@ async function updateMatch(req, res, next) {
       });
       const participantsChanged = (updates.homeTeamId !== undefined && updates.homeTeamId !== existing.homeTeamId)
         || (updates.awayTeamId !== undefined && updates.awayTeamId !== existing.awayTeamId);
-      if (participantsChanged && (existing.status === 'finished' || existing.status === 'live')) {
+      const resultChanged = status !== existing.status
+        || homeScore !== existing.homeScore
+        || awayScore !== existing.awayScore
+        || (updates.round !== undefined && updates.round !== existing.round);
+      if ((participantsChanged || resultChanged) && (existing.status === 'finished' || existing.status === 'live')) {
         await clearDownstreamKnockoutSlots(transaction, existing);
       }
       return updated;

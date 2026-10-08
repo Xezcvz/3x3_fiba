@@ -228,19 +228,21 @@ async function getTournamentBracket(req, res, next) {
       return { ...m, quarterScoresObj: quarters };
     });
 
-    // Categorize knockout matches: 8-Team, Semifinals, Final, 3rd Place
-    const qf = parsedMatches.filter(
-      (m) => m.round && (m.round.includes('รอบ 8 ทีม') || m.round.includes('ก่อนรอง') || m.round.includes('QF'))
-    );
-    const sf = parsedMatches.filter(
-      (m) => m.round && (m.round.includes('รองชนะเลิศ') && !m.round.includes('ก่อน') || m.round.includes('SF'))
-    );
-    const final = parsedMatches.filter(
-      (m) => m.round && (m.round.includes('ชิงชนะเลิศ') && !m.round.includes('รอง') && !m.round.includes('3') || m.round.includes('Final') && !m.round.includes('Semi'))
-    );
-    const thirdPlace = parsedMatches.filter(
-      (m) => m.round && (m.round.includes('อันดับ 3') || m.round.includes('3rd'))
-    );
+    // Classify by the match's own round name, not references to upstream rounds
+    // (SF, final, and bronze labels include QF/SF names in their descriptions).
+    const isThirdPlaceMatch = (round) => round.includes('ชิงอันดับ 3') || /3rd|bronze/i.test(round);
+    const isFinalMatch = (round) =>
+      (round.includes('ชิงชนะเลิศ') && !round.includes('รอง')) || (/Final/i.test(round) && !/Semi|3rd|Bronze/i.test(round));
+    const isSemiFinalMatch = (round) =>
+      !isFinalMatch(round) && !isThirdPlaceMatch(round) &&
+      ((round.includes('รองชนะเลิศ') && !round.includes('ก่อน')) || /SF\s*[12]|Semi[- ]?finals?/i.test(round));
+    const isQuarterFinalMatch = (round) =>
+      !isFinalMatch(round) && !isThirdPlaceMatch(round) && !isSemiFinalMatch(round) &&
+      (round.includes('รอบ 8 ทีม') || round.includes('ก่อนรอง') || /QF\s*[1-4]|Quarter[- ]?finals?/i.test(round));
+    const qf = parsedMatches.filter((m) => m.round && isQuarterFinalMatch(m.round));
+    const sf = parsedMatches.filter((m) => m.round && isSemiFinalMatch(m.round));
+    const final = parsedMatches.filter((m) => m.round && isFinalMatch(m.round));
+    const thirdPlace = parsedMatches.filter((m) => m.round && isThirdPlaceMatch(m.round));
     const groupMatches = parsedMatches.filter(
       (m) => !m.round || m.round.includes('กลุ่ม') || m.round.includes('สาย') || m.round.includes('Pool')
     );
@@ -474,7 +476,19 @@ async function advanceWinnerInternal(matchId) {
     if (!match || match.status !== 'finished' || match.homeScore === null || match.awayScore === null || !match.homeTeam || !match.awayTeam) {
       return { success: false, message: 'แมตช์นี้ยังแข่งไม่จบ หรือยังไม่มีผลคะแนน' };
     }
-    if (!match.round || (!match.round.includes('รอบ 8 ทีม') && !match.round.includes('QF') && !match.round.includes('รองชนะเลิศ'))) {
+    if (!match.round) {
+      return { success: false, message: 'เลื่อนทีมได้เฉพาะแมตช์รอบน็อกเอาต์' };
+    }
+
+    // Semi-final labels also mention their upstream QF matches (for example, "ชนะ QF1").
+    // Detect the round itself before looking for those QF references.
+    const semiFinalMatch = (match.round.includes('รองชนะเลิศ') && !match.round.includes('ก่อน'))
+      || /SF\s*[12]|Semi[- ]?finals?/i.test(match.round);
+    const quarterFinalMatch = !semiFinalMatch && (
+      match.round.includes('รอบ 8 ทีม') || match.round.includes('ก่อนรอง')
+      || /QF\s*[1-4]|Quarter[- ]?finals?/i.test(match.round)
+    );
+    if (!quarterFinalMatch && !semiFinalMatch) {
       return { success: false, message: 'เลื่อนทีมได้เฉพาะแมตช์รอบน็อกเอาต์' };
     }
 
@@ -482,8 +496,8 @@ async function advanceWinnerInternal(matchId) {
     const loser = match.homeScore > match.awayScore ? match.awayTeam : match.homeTeam;
     let updatedNext = null;
 
-    if (match.round.includes('รอบ 8 ทีม') || match.round.includes('QF')) {
-      const quarterFinalNumber = Number(match.round.match(/(?:คู่ที่ |QF\s*)([1-4])/i)?.[1]);
+    if (quarterFinalMatch) {
+      const quarterFinalNumber = Number(match.round.match(/คู่ที่\s*([1-4])/i)?.[1] || match.round.match(/QF\s*([1-4])/i)?.[1]);
       if (!quarterFinalNumber) return { success: false, message: 'ไม่สามารถระบุหมายเลขคู่รอบ 8 ทีมได้' };
       const semiFinalNumber = quarterFinalNumber <= 2 ? 1 : 2;
       const isHomeSlot = quarterFinalNumber % 2 === 1;
@@ -515,7 +529,10 @@ async function advanceWinnerInternal(matchId) {
         });
       }
       const thirdPlace = await transaction.match.findFirst({
-        where: { category: match.category, round: { contains: 'อันดับ 3' } },
+        where: {
+          category: match.category,
+          OR: [{ round: { contains: 'ชิงอันดับ 3' } }, { round: { contains: '3rd' } }],
+        },
       });
       if (thirdPlace) {
         await transaction.match.update({
@@ -554,58 +571,88 @@ async function advanceKnockoutWinner(req, res, next) {
 }
 
 async function clearDownstreamKnockoutSlots(transaction, match) {
-  if (!match.round || !match.round.includes('รอบ 8 ทีม')) return;
-  const quarterFinalNumber = Number(match.round.match(/คู่ที่\s*([1-4])/i)?.[1]);
-  if (!quarterFinalNumber) return;
+  if (!match.round) return;
 
-  const downstreamIds = new Set();
-  const semiFinalNumber = quarterFinalNumber <= 2 ? 1 : 2;
-  const semiFinal = await transaction.match.findFirst({
-    where: { category: match.category, round: { contains: `SF ${semiFinalNumber}` } },
-  });
-  if (!semiFinal) return;
-  downstreamIds.add(semiFinal.id);
+  const isSemiFinal = (match.round.includes('รองชนะเลิศ') && !match.round.includes('ก่อน'))
+    || /SF\s*[12]|Semi[- ]?finals?/i.test(match.round);
+  const isFinal = (match.round.includes('ชิงชนะเลิศ') && !match.round.includes('รอง'))
+    || (/Final/i.test(match.round) && !/Semi|3rd|Bronze/i.test(match.round));
+  const isThirdPlace = match.round.includes('ชิงอันดับ 3') || /3rd|bronze/i.test(match.round);
+  const isQuarterFinal = !isSemiFinal && !isFinal && !isThirdPlace
+    && (match.round.includes('รอบ 8 ทีม') || match.round.includes('ก่อนรอง')
+      || /QF\s*[1-4]|Quarter[- ]?finals?/i.test(match.round));
+  if (isQuarterFinal) {
+    const quarterFinalNumber = Number(match.round.match(/คู่ที่\s*([1-4])/i)?.[1]);
+    if (!quarterFinalNumber) return;
 
-  const semiFinalHasStarted = semiFinal.status === 'live' || semiFinal.status === 'finished';
-  if (semiFinalHasStarted) {
-    const nextMatches = await transaction.match.findMany({
-      where: {
-        category: match.category,
-        OR: [
-          { round: { contains: 'ชิงชนะเลิศ' }, NOT: { round: { contains: 'รอง' } } },
-          { round: { contains: 'อันดับ 3' } },
-        ],
-      },
-      select: { id: true },
+    const semiFinalNumber = quarterFinalNumber <= 2 ? 1 : 2;
+    const semiFinal = await transaction.match.findFirst({
+      where: { category: match.category, round: { contains: `SF ${semiFinalNumber}` } },
     });
-    nextMatches.forEach((nextMatch) => downstreamIds.add(nextMatch.id));
+    if (!semiFinal) return;
+
+    const downstream = [semiFinal];
+    const semiFinalHasStarted = semiFinal.status === 'live' || semiFinal.status === 'finished';
+    if (semiFinalHasStarted) {
+      const [finalMatch, thirdPlace] = await Promise.all([
+        transaction.match.findFirst({
+          where: { category: match.category, round: { contains: 'ชิงชนะเลิศ' }, NOT: { round: { contains: 'รอง' } } },
+        }),
+        transaction.match.findFirst({
+          where: {
+            category: match.category,
+            OR: [{ round: { contains: 'ชิงอันดับ 3' } }, { round: { contains: '3rd' } }],
+          },
+        }),
+      ]);
+      if (finalMatch) downstream.push(finalMatch);
+      if (thirdPlace) downstream.push(thirdPlace);
+    }
+
+    if (downstream.some((nextMatch) => nextMatch.status === 'live' || nextMatch.status === 'finished')) {
+      throw Object.assign(new Error('ลบหรือเปลี่ยนผลรอบก่อนหน้าไม่ได้ เพราะรอบถัดไปเริ่มแข่งแล้ว'), { statusCode: 409 });
+    }
+
+    const slot = quarterFinalNumber % 2 === 1 ? 'homeTeamId' : 'awayTeamId';
+    await transaction.match.update({
+      where: { id: semiFinal.id },
+      data: { [slot]: null, homeScore: null, awayScore: null, quarterScores: null, status: 'upcoming' },
+    });
+    if (!semiFinalHasStarted) return;
+
+    const nextSlot = semiFinalNumber === 1 ? 'homeTeamId' : 'awayTeamId';
+    const resetData = { [nextSlot]: null, homeScore: null, awayScore: null, quarterScores: null, status: 'upcoming' };
+    for (const nextMatch of downstream.slice(1)) {
+      await transaction.match.update({ where: { id: nextMatch.id }, data: resetData });
+    }
+    return;
   }
 
-  const downstreamMatches = await transaction.match.findMany({
-    where: { id: { in: [...downstreamIds] } },
-    select: { id: true, status: true },
-  });
-  if (downstreamMatches.some((downstreamMatch) => downstreamMatch.status === 'live' || downstreamMatch.status === 'finished')) {
+  if (!isSemiFinal) return;
+  const semiFinalNumber = Number(match.round.match(/SF\s*([12])/i)?.[1]);
+  if (!semiFinalNumber) return;
+
+  const [finalMatch, thirdPlace] = await Promise.all([
+    transaction.match.findFirst({
+      where: { category: match.category, round: { contains: 'ชิงชนะเลิศ' }, NOT: { round: { contains: 'รอง' } } },
+    }),
+    transaction.match.findFirst({
+      where: {
+        category: match.category,
+        OR: [{ round: { contains: 'ชิงอันดับ 3' } }, { round: { contains: '3rd' } }],
+      },
+    }),
+  ]);
+  const downstream = [finalMatch, thirdPlace].filter(Boolean);
+  if (downstream.some((nextMatch) => nextMatch.status === 'live' || nextMatch.status === 'finished')) {
     throw Object.assign(new Error('ลบหรือเปลี่ยนผลรอบก่อนหน้าไม่ได้ เพราะรอบถัดไปเริ่มแข่งแล้ว'), { statusCode: 409 });
   }
 
-  const slot = quarterFinalNumber % 2 === 1 ? 'homeTeamId' : 'awayTeamId';
-  await transaction.match.update({
-    where: { id: semiFinal.id },
-    data: { [slot]: null, homeScore: null, awayScore: null, quarterScores: null, status: 'upcoming' },
-  });
-  if (!semiFinalHasStarted) return;
-
-  const finalMatch = await transaction.match.findFirst({
-    where: { category: match.category, round: { contains: 'ชิงชนะเลิศ' }, NOT: { round: { contains: 'รอง' } } },
-  });
-  const thirdPlace = await transaction.match.findFirst({
-    where: { category: match.category, round: { contains: 'อันดับ 3' } },
-  });
   const nextSlot = semiFinalNumber === 1 ? 'homeTeamId' : 'awayTeamId';
   const resetData = { [nextSlot]: null, homeScore: null, awayScore: null, quarterScores: null, status: 'upcoming' };
-  if (finalMatch) await transaction.match.update({ where: { id: finalMatch.id }, data: resetData });
-  if (thirdPlace) await transaction.match.update({ where: { id: thirdPlace.id }, data: resetData });
+  for (const nextMatch of downstream) {
+    await transaction.match.update({ where: { id: nextMatch.id }, data: resetData });
+  }
 }
 
 

@@ -1,4 +1,26 @@
 const prisma = require('../prisma');
+const { createDrawPlan, validateLockedAssignments } = require('../utils/draw-rules');
+
+async function prepareDraw(req, res, next) {
+  try {
+    const { category = 'all', groupCount = 3 } = req.body || {};
+    if (!['all', 'รุ่น A', 'รุ่น B'].includes(category)) return res.status(400).json({ message: 'รุ่นการแข่งขันไม่ถูกต้อง' });
+    const where = category === 'all' ? {} : { category };
+    const teams = await prisma.team.findMany({ where, orderBy: { id: 'asc' } });
+    const teamIds = teams.map((team) => team.id);
+    if (teamIds.length > 0) {
+      const linkedMatches = await prisma.match.count({
+        where: { OR: [{ homeTeamId: { in: teamIds } }, { awayTeamId: { in: teamIds } }] },
+      });
+      if (linkedMatches > 0) return res.status(409).json({ message: 'เริ่มจับสายใหม่ไม่ได้เมื่อมีประวัติการแข่งขันของทีมเหล่านี้แล้ว' });
+    }
+    const assignments = createDrawPlan(teams, groupCount, category);
+    return res.json({ assignments, teams: teams.map(({ id, name, category: teamCategory, logoUrl }) => ({ id, name, category: teamCategory, logoUrl })) });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
+    next(error);
+  }
+}
 
 // GET /api/teams/groups — get teams grouped by their group field
 async function getGroups(req, res, next) {
@@ -32,30 +54,20 @@ async function autoDraw(req, res, next) {
     const where = category === 'all' ? {} : { category };
     const teams = await prisma.team.findMany({ where, orderBy: { id: 'asc' } });
 
-    if (teams.length === 0) {
-      return res.status(400).json({ message: 'ไม่มีทีมในระบบ' });
-    }
-    if (teams.length > groupCount * 4) return res.status(400).json({ message: 'จำนวนทีมเกินรูปแบบกลุ่ม (ไม่เกิน 4 ทีมต่อกลุ่ม)' });
-    // Shuffle teams (Fisher–Yates)
-    const shuffled = [...teams];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-
-    // Default group labels: A, B, C, D ...
-    const labels = Array.from({ length: groupCount }, (_, i) => String.fromCharCode(65 + i));
-
-    // Assign teams round-robin to groups
+    const assignments = createDrawPlan(teams, groupCount, category);
+    const teamIds = assignments.map(({ teamId }) => teamId);
     await prisma.$transaction(async (transaction) => {
       const linkedMatches = await transaction.match.count({
-        where: { OR: [{ homeTeamId: { in: shuffled.map((team) => team.id) } }, { awayTeamId: { in: shuffled.map((team) => team.id) } }] },
+        where: { OR: [{ homeTeamId: { in: teamIds } }, { awayTeamId: { in: teamIds } }] },
       });
       if (linkedMatches > 0) throw Object.assign(new Error('เปลี่ยนสายไม่ได้เมื่อมีประวัติการแข่งขันของทีมเหล่านี้แล้ว'), { statusCode: 409 });
-      for (let index = 0; index < shuffled.length; index += 1) {
+      const currentTeams = await transaction.team.findMany({ where: { id: { in: teamIds } } });
+      const lockedError = validateLockedAssignments(currentTeams, assignments);
+      if (lockedError) throw Object.assign(new Error(lockedError), { statusCode: 400 });
+      for (const { teamId, group } of assignments) {
         await transaction.team.update({
-          where: { id: shuffled[index].id },
-          data: { group: labels[index % labels.length] },
+          where: { id: teamId },
+          data: { group },
         });
       }
     });
@@ -103,11 +115,15 @@ async function manualDraw(req, res, next) {
     if (Object.values(teamsPerGroup).some((count) => count > 4)) {
       return res.status(400).json({ message: 'แต่ละกลุ่มมีทีมได้ไม่เกิน 4 ทีม' });
     }
-    const where = { id: { in: teamIds } };
-    if (category !== 'all') where.category = category;
+    const where = category === 'all' ? {} : { category };
     const updated = await prisma.$transaction(async (transaction) => {
-      const matchingTeams = await transaction.team.findMany({ where, select: { id: true } });
-      if (matchingTeams.length !== teamIds.length) throw Object.assign(new Error('มีทีมที่ไม่อยู่ในรุ่นที่เลือกหรือไม่มีอยู่ในระบบ'), { statusCode: 400 });
+      const matchingTeams = await transaction.team.findMany({ where });
+      const matchingIds = new Set(matchingTeams.map((team) => team.id));
+      if (matchingTeams.length !== teamIds.length || teamIds.some((teamId) => !matchingIds.has(teamId))) {
+        throw Object.assign(new Error('รายชื่อทีมเปลี่ยนระหว่างจับสลาก กรุณาเริ่มจับใหม่'), { statusCode: 409 });
+      }
+      const lockedError = validateLockedAssignments(matchingTeams, assignments);
+      if (lockedError) throw Object.assign(new Error(lockedError), { statusCode: 400 });
       const linkedMatches = await transaction.match.count({ where: { OR: [{ homeTeamId: { in: teamIds } }, { awayTeamId: { in: teamIds } }] } });
       if (linkedMatches > 0) throw Object.assign(new Error('เปลี่ยนสายไม่ได้เมื่อมีประวัติการแข่งขันของทีมเหล่านี้แล้ว'), { statusCode: 409 });
       for (const { teamId, group } of assignments) {
@@ -149,4 +165,4 @@ async function resetDraw(req, res, next) {
   }
 }
 
-module.exports = { getGroups, autoDraw, manualDraw, resetDraw };
+module.exports = { getGroups, prepareDraw, autoDraw, manualDraw, resetDraw };

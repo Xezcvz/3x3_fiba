@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { categoryLabel } from '../utils/category-label';
 import {
   Trophy,
   ChevronRight,
@@ -125,7 +126,7 @@ export default function FibaBracket({
       return;
     }
     const ok = await confirm({
-      title: `สร้างรอบ 8 ทีม (QF) ของ ${activeCategory}?`,
+      title: `สร้างรอบ 8 ทีม (QF) ของ ${categoryLabel(activeCategory)}?`,
       message: `ระบบจะคัดเลือก 8 ทีมที่เข้ารอบจากผลรอบแบ่งกลุ่ม:\n• แชมป์กลุ่ม A, B, C (3 ทีม)\n• รองแชมป์กลุ่ม A, B, C (3 ทีม)\n• อันดับ 3 ที่ดีที่สุด 2 ทีม\n\nแล้วจับคู่ QF 4 คู่ + SF 2 คู่ + ชิงชนะเลิศ + ชิงอันดับ 3 อัตโนมัติ`,
       confirmText: '✅ สร้างรอบ 8 ทีมทันที',
       type: 'warning',
@@ -166,7 +167,7 @@ export default function FibaBracket({
       return;
     }
     const ok = await confirm({
-      title: `⚠️ รีเซ็ตรอบน็อกเอาต์ทั้งหมดของ ${activeCategory}?`,
+      title: `⚠️ รีเซ็ตรอบน็อกเอาต์ทั้งหมดของ ${categoryLabel(activeCategory)}?`,
       message: `จะลบแมตช์ QF, SF, ชิงชนะเลิศ และชิงอันดับ 3 ทั้งหมด\nการกระทำนี้ไม่สามารถย้อนกลับได้!`,
       confirmText: '🗑️ รีเซ็ตเลย',
       type: 'danger',
@@ -187,8 +188,8 @@ export default function FibaBracket({
   // ── Seed 24 Demo ────────────────────────────────────────────────────────
   const handleSeed24 = async () => {
     const ok = await confirm({
-      title: 'โหลดโครงสร้างตัวอย่าง 24 ทีม (รุ่น A & รุ่น B)?',
-      message: 'ระบบจะสร้างทีม 24 ทีม (รุ่น A = 12 ทีม, รุ่น B = 12 ทีม) พร้อมแบ่งกลุ่ม A, B, C กลุ่มละ 4 ทีม และสร้างตารางแข่งรอบแบ่งกลุ่ม 36 แมตช์',
+      title: 'โหลดโครงสร้างตัวอย่าง 24 ทีม (รุ่น U18 และบุคคลภายนอก)?',
+      message: 'ระบบจะสร้างทีมตัวอย่าง 24 ทีม แบ่งเป็นรุ่น U18 12 ทีม และรุ่นบุคคลภายนอก 12 ทีม พร้อมตารางรอบแบ่งกลุ่ม',
       confirmText: 'โหลดข้อมูลตัวอย่าง',
       type: 'warning',
     });
@@ -314,7 +315,7 @@ export default function FibaBracket({
             </div>
 
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
-              ผังสายโยงทัวร์นาเมนต์ {activeCategory}
+              ผังสายโยงทัวร์นาเมนต์ {categoryLabel(activeCategory)}
             </h2>
 
             <p className="text-xs sm:text-sm text-slate-400 max-w-2xl leading-relaxed">
@@ -337,7 +338,7 @@ export default function FibaBracket({
                   }`}
                 >
                   <Layers className="w-4 h-4" />
-                  <span>{cat} (12 ทีม)</span>
+                  <span>{categoryLabel(cat)} (12 ทีม)</span>
                 </button>
               ))}
             </div>
@@ -403,7 +404,7 @@ export default function FibaBracket({
               <div>
                 <h3 className="text-white font-extrabold text-lg flex items-center gap-2">
                   <Settings2 className="w-5 h-5" />
-                  กำหนด Seed รอบ 8 ทีม ({activeCategory})
+                  กำหนด Seed รอบ 8 ทีม ({categoryLabel(activeCategory)})
                 </h3>
                 <p className="text-indigo-200 text-xs mt-0.5">เลือกทีมสำหรับแต่ละ QF slot ด้วยตนเอง</p>
               </div>
@@ -610,7 +611,7 @@ export default function FibaBracket({
                 </span>
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-800 uppercase tracking-wider">
-                    รอบแบ่งกลุ่ม ({activeCategory})
+                    รอบแบ่งกลุ่ม ({categoryLabel(activeCategory)})
                   </h3>
                   <span className="text-[11px] text-slate-500 font-medium">
                     3 กลุ่ม กลุ่มละ 4 ทีม (18 เกม)

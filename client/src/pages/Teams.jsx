@@ -63,7 +63,7 @@ export default function Teams() {
             ทีมทั้งหมดในทัวร์นาเมนต์
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            รายชื่อทีมบาสเกตบอล 3×3 ที่เข้าร่วมการแข่งขัน NVC 3×3 Basketball Club (รุ่น A & รุ่น B)
+            รายชื่อทีมบาสเกตบอล 3×3 ที่เข้าร่วมการแข่งขัน NVC 3×3 Basketball Club (รุ่น U18 และรุ่นบุคคลภายนอก)
           </p>
         </div>
 
@@ -82,8 +82,8 @@ export default function Teams() {
           <div className="flex items-center bg-slate-100 p-1 rounded-2xl">
             {[
               { id: 'all', label: 'ทุกรุ่น' },
-              { id: 'รุ่น A', label: 'รุ่น A' },
-              { id: 'รุ่น B', label: 'รุ่น B' },
+              { id: 'รุ่น A', label: 'รุ่น U18' },
+              { id: 'รุ่น B', label: 'รุ่นบุคคลภายนอก' },
             ].map((tab) => (
               <button
                 key={tab.id}

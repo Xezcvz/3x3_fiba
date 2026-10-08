@@ -1,5 +1,6 @@
 const prisma = require('../prisma');
 const { parseMatchInput, scoreFromDetails, validateFinishedScore } = require('../utils/match-validation');
+const { validateSharedPlayerSchedule } = require('../utils/scheduling-constraints');
 
 const MATCH_STATUSES = new Set(['upcoming', 'live', 'finished']);
 const MATCH_CATEGORIES = new Set(['รุ่น A', 'รุ่น B']);
@@ -174,6 +175,13 @@ async function createMatch(req, res, next) {
       return responseBadRequest(res, 'แมตช์รอบแบ่งกลุ่มต้องเป็นทีมในกลุ่มเดียวกัน');
     }
     if (teams.homeTeam.category !== matchData.category) return responseBadRequest(res, 'รุ่นแข่งขันต้องตรงกับรุ่นของทีม');
+    if (matchData.status !== 'finished') {
+      const scheduleError = await validateSharedPlayerSchedule(prisma, {
+        teams: [teams.homeTeam, teams.awayTeam],
+        matchDate: new Date(matchData.matchDate),
+      });
+      if (scheduleError) return responseBadRequest(res, scheduleError);
+    }
 
     const details = matchData.quarterScores;
     const derivedHomeScore = scoreFromDetails(details, 'Home');
@@ -247,6 +255,19 @@ async function updateMatch(req, res, next) {
     const data = { ...updates, category, homeTeamId, awayTeamId, homeScore, awayScore };
     if (updates.matchDate) data.matchDate = new Date(updates.matchDate);
     if (Object.hasOwn(updates, 'quarterScores')) data.quarterScores = details ? JSON.stringify(details) : null;
+
+    const scheduleChanged = updates.matchDate !== undefined
+      || updates.homeTeamId !== undefined
+      || updates.awayTeamId !== undefined
+      || updates.category !== undefined;
+    if (scheduleChanged && status !== 'finished') {
+      const scheduleError = await validateSharedPlayerSchedule(prisma, {
+        teams: [teams.homeTeam, teams.awayTeam],
+        matchDate: data.matchDate || existing.matchDate,
+        excludeMatchId: id,
+      });
+      if (scheduleError) return responseBadRequest(res, scheduleError);
+    }
 
     const updatedMatch = await prisma.$transaction(async (transaction) => {
       const { clearDownstreamKnockoutSlots } = require('./tournament.controller');

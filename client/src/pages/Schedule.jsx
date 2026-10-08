@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getMatches, getTeams, getTournamentBracket } from '../services/api';
+import { categoryLabel } from '../utils/category-label';
 import MatchCard from '../components/MatchCard';
 import FibaBracket from '../components/FibaBracket';
 import ApiErrorNotice from '../components/ApiErrorNotice';
@@ -199,7 +200,7 @@ export default function Schedule() {
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  {cat === 'all' ? 'ทุกรุ่น' : cat}
+                  {cat === 'all' ? 'ทุกรุ่น' : categoryLabel(cat)}
                 </button>
               ))}
             </div>

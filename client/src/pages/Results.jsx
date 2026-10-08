@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { getMatches, getTeams } from '../services/api';
+import { categoryLabel } from '../utils/category-label';
 import MatchCard from '../components/MatchCard';
 import ApiErrorNotice from '../components/ApiErrorNotice';
 import useLiveUpdates from '../hooks/useLiveUpdates';
@@ -84,8 +85,8 @@ export default function Results() {
           {/* Division (Category) Filter Tabs */}
           <div className="flex items-center bg-slate-100 p-1 rounded-2xl">
             {[
-              { id: 'รุ่น A', label: 'รุ่น A (12 ทีม)' },
-              { id: 'รุ่น B', label: 'รุ่น B (12 ทีม)' },
+              { id: 'รุ่น A', label: 'รุ่น U18' },
+              { id: 'รุ่น B', label: 'รุ่นบุคคลภายนอก' },
               { id: 'all', label: 'ทุกรุ่น' },
             ].map((tab) => (
               <button
@@ -150,7 +151,7 @@ export default function Results() {
             return (
               <div key={`${category}-${group}`} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
                 <div className={`px-5 py-3.5 bg-gradient-to-r ${styling.header} text-white flex items-center justify-between`}>
-                  <span className="font-bold text-sm">{category} · กลุ่ม {group}</span>
+                  <span className="font-bold text-sm">{categoryLabel(category)} · กลุ่ม {group}</span>
                   <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded font-medium">
                     {loading ? 'กำลังโหลด…' : `${groupTeams.length} ทีม`}
                   </span>

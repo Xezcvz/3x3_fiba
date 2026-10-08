@@ -38,6 +38,7 @@ export const resetAllTeams = (category = 'all') => api.post('/teams/reset-all', 
 // Draw API
 export const getGroups = () => api.get('/teams/groups');
 export const autoDraw = (data) => api.post('/teams/draw/auto', data);
+export const prepareDraw = (data) => api.post('/teams/draw/prepare', data);
 export const manualDraw = (assignments, category = 'all') => api.post('/teams/draw/manual', { assignments, category });
 export const resetDraw = (category = 'all') => api.post('/teams/draw/reset', { category });
 

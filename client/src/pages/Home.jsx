@@ -281,7 +281,7 @@ export default function Home() {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-4">
-            <p className="text-xs font-bold text-slate-500">รุ่น A · ชนะ / แพ้ / คะแนนเฉลี่ยต่อนัด</p>
+            <p className="text-xs font-bold text-slate-500">รุ่น U18 · ชนะ / แพ้ / คะแนนเฉลี่ยต่อนัด</p>
             {['A', 'B', 'C'].map((group) => {
               const groupTeams = getGroupTeams(group);
               return (

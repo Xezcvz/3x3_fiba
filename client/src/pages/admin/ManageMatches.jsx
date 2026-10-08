@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
+import { categoryLabel } from '../../utils/category-label';
 import {
   getMatches,
   getTeams,
@@ -531,7 +532,7 @@ export default function ManageMatches() {
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              {c === 'all' ? 'ทุกรุ่น (24 ทีม)' : c}
+              {c === 'all' ? 'ทุกรุ่น' : categoryLabel(c)}
             </button>
           ))}
         </div>
@@ -678,7 +679,7 @@ export default function ManageMatches() {
                           : 'bg-white text-slate-600 border-slate-200 hover:border-primary-300'
                       }`}
                     >
-                      {cat} (12 ทีม)
+                      {categoryLabel(cat)}
                     </button>
                   ))}
                 </div>
@@ -700,7 +701,7 @@ export default function ManageMatches() {
                     {eligibleTeams
                       .map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.name} ({t.category} กลุ่ม {t.group})
+                          {t.name} ({categoryLabel(t.category)} กลุ่ม {t.group})
                         </option>
                       ))}
                   </select>
@@ -720,7 +721,7 @@ export default function ManageMatches() {
                     {eligibleTeams
                       .map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.name} ({t.category} กลุ่ม {t.group})
+                          {t.name} ({categoryLabel(t.category)} กลุ่ม {t.group})
                         </option>
                       ))}
                   </select>
@@ -740,6 +741,9 @@ export default function ManageMatches() {
                     onChange={(e) => setMatchDate(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl text-sm bg-slate-50 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 font-medium"
                   />
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-amber-700">
+                    ระบบจะกันเวลาเดียวกันให้อัตโนมัติสำหรับ HTH x กินเส้นไรรามยอน กับ Hunter Hoop A และ Hae Chi กับ สุดสาครPT
+                  </p>
                 </div>
 
                 <div>

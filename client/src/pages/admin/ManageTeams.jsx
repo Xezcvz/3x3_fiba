@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { categoryLabel } from '../../utils/category-label';
 import {
   getTeams,
   createTeam,
@@ -340,7 +341,7 @@ export default function ManageTeams() {
                   <div>
                     <span className="font-bold block text-indigo-700">โหลดชุดทีมมาตรฐาน 24 ทีม</span>
                     <span className="text-[11px] text-slate-500">
-                      สร้างทีม 24 ทีม (รุ่น A & B) พร้อมตารางแข่ง
+                      สร้างทีมตัวอย่าง 24 ทีม (U18 และบุคคลภายนอก) พร้อมตารางแข่ง
                     </span>
                   </div>
                 </button>
@@ -413,7 +414,7 @@ export default function ManageTeams() {
                   </td>
                   <td className="py-3.5 px-4">
                     <span className="bg-primary-50 text-primary-700 px-2.5 py-0.5 rounded-full text-xs font-bold">
-                      {t.category} · กลุ่ม {t.group}
+                      {categoryLabel(t.category)} · กลุ่ม {t.group}
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-slate-500 text-xs">
@@ -495,8 +496,8 @@ export default function ManageTeams() {
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">รุ่นการแข่งขัน *</label>
                 <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl text-sm bg-slate-50 border border-slate-200 font-semibold">
-                  <option value="รุ่น A">รุ่น A</option>
-                  <option value="รุ่น B">รุ่น B</option>
+                  <option value="รุ่น A">รุ่น U18</option>
+                  <option value="รุ่น B">รุ่นบุคคลภายนอก</option>
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-4">

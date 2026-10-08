@@ -2,14 +2,16 @@ const SHARED_PLAYER_PAIRS = [
   {
     first: { category: 'รุ่น B', name: 'HTH x กินเส้นไรรามยอน' },
     second: { category: 'รุ่น A', name: 'Hunter Hoop A' },
-    message: 'HTH x กินเส้นไรรามยอน (บุคคลภายนอก) ต้องไม่แข่งขันเวลาเดียวกับ Hunter Hoop A (U18)',
+    message: 'HTH x กินเส้นไรรามยอน (บุคคลภายนอก) กับ Hunter Hoop A (U18) ต้องเว้นช่วงแข่งอย่างน้อย 15 นาที',
   },
   {
     first: { category: 'รุ่น A', name: 'Hae Chi' },
     second: { category: 'รุ่น B', name: 'สุดสาครPT' },
-    message: 'Hae Chi (U18) ต้องไม่แข่งขันเวลาเดียวกับ สุดสาครPT (บุคคลภายนอก)',
+    message: 'Hae Chi (U18) กับ สุดสาครPT (บุคคลภายนอก) ต้องเว้นช่วงแข่งอย่างน้อย 15 นาที',
   },
 ];
+
+const MATCH_SLOT_MS = 15 * 60 * 1000;
 
 function normalizeName(name) {
   return name.normalize('NFC').trim().toLocaleLowerCase('th-TH');
@@ -42,7 +44,10 @@ async function validateSharedPlayerSchedule(transaction, { teams, matchDate, exc
 
     const conflictingMatch = await transaction.match.findFirst({
       where: {
-        matchDate: date,
+        matchDate: {
+          gt: new Date(date.getTime() - MATCH_SLOT_MS),
+          lt: new Date(date.getTime() + MATCH_SLOT_MS),
+        },
         ...(excludeMatchId ? { id: { not: excludeMatchId } } : {}),
         OR: [{ homeTeamId: opponentTeam.id }, { awayTeamId: opponentTeam.id }],
       },
@@ -53,4 +58,4 @@ async function validateSharedPlayerSchedule(transaction, { teams, matchDate, exc
   return null;
 }
 
-module.exports = { SHARED_PLAYER_PAIRS, normalizeName, validateSharedPlayerSchedule };
+module.exports = { MATCH_SLOT_MS, SHARED_PLAYER_PAIRS, normalizeName, validateSharedPlayerSchedule };

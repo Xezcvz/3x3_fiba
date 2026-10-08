@@ -742,7 +742,7 @@ export default function ManageMatches() {
                     className="w-full px-3.5 py-2.5 rounded-xl text-sm bg-slate-50 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 font-medium"
                   />
                   <p className="mt-1.5 text-[11px] leading-relaxed text-amber-700">
-                    ระบบจะกันเวลาเดียวกันให้อัตโนมัติสำหรับ HTH x กินเส้นไรรามยอน กับ Hunter Hoop A และ Hae Chi กับ สุดสาครPT
+                    ระบบจะเว้นช่วงให้คู่นี้อย่างน้อย 15 นาที: HTH x กินเส้นไรรามยอน กับ Hunter Hoop A และ Hae Chi กับ สุดสาครPT
                   </p>
                 </div>
 

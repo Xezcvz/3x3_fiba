@@ -36,7 +36,8 @@ export default function ManageMatches() {
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editQueryHandledRef = useRef(false);
 
   // Reset Menu State
   const [showResetMenu, setShowResetMenu] = useState(false);
@@ -93,7 +94,8 @@ export default function ManageMatches() {
 
       // Check if `?edit=id` is in query string
       const editId = searchParams.get('edit');
-      if (editId) {
+      if (editId && !editQueryHandledRef.current) {
+        editQueryHandledRef.current = true;
         const found = matchesRes.data.find((m) => m.id === parseInt(editId, 10));
         if (found) {
           openEditModal(found);
@@ -253,6 +255,12 @@ export default function ManageMatches() {
         await createMatch(payload);
       }
       setIsModalOpen(false);
+      setFormError('');
+      if (searchParams.has('edit')) {
+        const nextSearchParams = new URLSearchParams(searchParams);
+        nextSearchParams.delete('edit');
+        setSearchParams(nextSearchParams, { replace: true });
+      }
       await fetchInitialData();
     } catch (err) {
       setFormError(err.response?.data?.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');

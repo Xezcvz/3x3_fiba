@@ -226,6 +226,36 @@ async function updateMatch(req, res, next) {
     if (Object.keys(parsed.data).length === 0) return responseBadRequest(res, 'กรุณาระบุข้อมูลที่ต้องการแก้ไข');
 
     const updates = parsed.data;
+
+    // Date/time edits are intentionally isolated from score, round, and team
+    // validation so legacy match data cannot prevent an administrator from
+    // correcting only the schedule.
+    if (Object.keys(updates).length === 1 && updates.matchDate !== undefined) {
+      const teams = await getTeamsForMatch(existing.homeTeamId, existing.awayTeamId);
+      if (teams.error) return responseBadRequest(res, teams.error);
+      const category = existing.category ?? teams.homeTeam.category;
+      if (teams.homeTeam.category !== category) {
+        return responseBadRequest(res, 'รุ่นแข่งขันต้องตรงกับรุ่นของทีม');
+      }
+
+      const matchDate = new Date(updates.matchDate);
+      if (existing.status !== 'finished') {
+        const scheduleError = await validateSharedPlayerSchedule(prisma, {
+          teams: [teams.homeTeam, teams.awayTeam],
+          matchDate,
+          excludeMatchId: id,
+        });
+        if (scheduleError) return responseBadRequest(res, scheduleError);
+      }
+
+      const updatedMatch = await prisma.match.update({
+        where: { id },
+        data: { matchDate },
+        include: { homeTeam: true, awayTeam: true },
+      });
+      return res.json({ message: 'อัปเดตวันและเวลาแข่งขันสำเร็จ', match: updatedMatch });
+    }
+
     const homeTeamId = updates.homeTeamId ?? existing.homeTeamId;
     const awayTeamId = updates.awayTeamId ?? existing.awayTeamId;
     if (homeTeamId == null || awayTeamId == null) {

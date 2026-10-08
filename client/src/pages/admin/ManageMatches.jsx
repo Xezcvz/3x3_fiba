@@ -240,7 +240,9 @@ export default function ManageMatches() {
       homeTeamId: parseInt(homeTeamId, 10),
       awayTeamId: parseInt(awayTeamId, 10),
       category,
-      matchDate,
+      // datetime-local contains the browser's local wall time; send an ISO
+      // instant so the API does not reinterpret it as UTC and shift the time.
+      matchDate: matchDate ? new Date(matchDate).toISOString() : matchDate,
       venue,
       status,
       round,
@@ -251,7 +253,29 @@ export default function ManageMatches() {
 
     try {
       if (isEditing) {
-        await updateMatch(currentMatchId, payload);
+        const original = matches.find((match) => match.id === currentMatchId);
+        const originalDetails = original?.quarterScoresObj || {};
+        const onlyDateChanged = original
+          && new Date(original.matchDate).getTime() !== new Date(payload.matchDate).getTime()
+          && Number(homeTeamId) === original.homeTeamId
+          && Number(awayTeamId) === original.awayTeamId
+          && category === original.category
+          && venue === (original.venue || 'สนาม 1')
+          && status === original.status
+          && round === original.round
+          && (homeScore === '' ? null : Number(homeScore)) === original.homeScore
+          && (awayScore === '' ? null : Number(awayScore)) === original.awayScore
+          && (onePtHome === '' ? null : Number(onePtHome)) === (originalDetails.onePtHome ?? null)
+          && (onePtAway === '' ? null : Number(onePtAway)) === (originalDetails.onePtAway ?? null)
+          && (twoPtHome === '' ? null : Number(twoPtHome)) === (originalDetails.twoPtHome ?? null)
+          && (twoPtAway === '' ? null : Number(twoPtAway)) === (originalDetails.twoPtAway ?? null)
+          && (foulsHome === '' ? null : Number(foulsHome)) === (originalDetails.foulsHome ?? null)
+          && (foulsAway === '' ? null : Number(foulsAway)) === (originalDetails.foulsAway ?? null)
+          && winReason === (originalDetails.winReason || '21pts');
+
+        // A schedule-only edit should not resubmit or revalidate unrelated
+        // legacy scores and team data. Other edits retain the full form flow.
+        await updateMatch(currentMatchId, onlyDateChanged ? { matchDate: payload.matchDate } : payload);
       } else {
         await createMatch(payload);
       }

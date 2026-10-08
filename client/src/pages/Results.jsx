@@ -151,7 +151,9 @@ export default function Results() {
               <div key={`${category}-${group}`} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
                 <div className={`px-5 py-3.5 bg-gradient-to-r ${styling.header} text-white flex items-center justify-between`}>
                   <span className="font-bold text-sm">{category} · กลุ่ม {group}</span>
-                  <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded font-medium">{groupTeams.length} ทีม</span>
+                  <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded font-medium">
+                    {loading ? 'กำลังโหลด…' : `${groupTeams.length} ทีม`}
+                  </span>
                 </div>
                 <div className="overflow-x-auto flex-1">
                   <table className="w-full text-left text-xs sm:text-sm">
@@ -167,7 +169,19 @@ export default function Results() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {groupTeams.length === 0 ? (
+                      {loading ? (
+                        <tr>
+                          <td colSpan="7" role="status" className="py-8 text-center text-slate-400 text-xs">
+                            กำลังโหลดข้อมูลทีมและตารางคะแนน…
+                          </td>
+                        </tr>
+                      ) : loadError ? (
+                        <tr>
+                          <td colSpan="7" className="py-8 text-center text-rose-500 text-xs">
+                            โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่
+                          </td>
+                        </tr>
+                      ) : groupTeams.length === 0 ? (
                         <tr>
                           <td colSpan="7" className="py-8 text-center text-slate-400 text-xs">
                             ยังไม่มีทีมในกลุ่ม {group}
@@ -224,7 +238,7 @@ export default function Results() {
             <h2 className="text-xl font-bold text-slate-800">ผลการแข่งขันทุกนัด</h2>
           </div>
           <span className="text-xs text-slate-400 font-medium">
-            ทั้งหมด {results.length} แมตช์
+            {loading ? 'กำลังโหลดผลการแข่งขัน…' : `ทั้งหมด ${results.length} แมตช์`}
           </span>
         </div>
 

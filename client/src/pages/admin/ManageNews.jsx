@@ -18,6 +18,7 @@ export default function ManageNews() {
   const { confirm, alert: showAlert } = useModal();
   const [newsList, setNewsList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -42,8 +43,10 @@ export default function ManageNews() {
       setLoading(true);
       const res = await getNews();
       setNewsList(res.data);
+      setLoadError('');
     } catch (err) {
       console.error(err);
+      setLoadError(err.response?.data?.message || 'โหลดข่าวสารไม่สำเร็จ กรุณาลองใหม่');
     } finally {
       setLoading(false);
     }
@@ -163,6 +166,7 @@ export default function ManageNews() {
 
       {/* News Table Card */}
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+        {loadError && <div role="alert" className="p-4 text-sm text-rose-800 bg-rose-50 flex justify-between"><span>{loadError}</span><button onClick={fetchNews} className="font-bold underline">ลองอีกครั้ง</button></div>}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs sm:text-sm">
             <thead className="bg-slate-50 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-100">
@@ -175,7 +179,8 @@ export default function ManageNews() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
-              {newsList.map((n) => (
+              {loading && <tr><td colSpan="5" className="py-12 text-center text-slate-400">กำลังโหลดข่าว…</td></tr>}
+              {!loading && !loadError && newsList.map((n) => (
                 <tr key={n.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="py-3.5 px-4">
                     <div className="w-14 h-10 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0">

@@ -5,7 +5,7 @@
 เว็บไซต์สำหรับประกาศ/จัดการข้อมูลการแข่งขันบาสเกตบอล เช่น ตารางแข่ง ผลการแข่งขัน ทีม และข่าวสาร
 - **Frontend:** React + Tailwind CSS
 - **Backend:** Node.js (Express)
-- **Database:** SQLite (เบา ติดตั้งง่าย ไม่ต้องตั้งเซิร์ฟเวอร์แยก) — ใช้ Prisma หรือ better-sqlite3 เป็น ORM/driver
+- **Database:** PostgreSQL ผ่าน Prisma ORM สำหรับ deploy; ใช้ฐานข้อมูล PostgreSQL ที่แยกจาก Render filesystem เพื่อให้ข้อมูลคงอยู่หลัง restart/deploy
 - **ธีมสี:** ขาว–ฟ้า (White & Blue)
 
 ---
@@ -196,7 +196,7 @@ model Admin {
 cd server
 npm install express cors dotenv bcrypt jsonwebtoken @prisma/client
 npm install -D prisma nodemon
-npx prisma init --datasource-provider sqlite
+npx prisma init --datasource-provider postgresql
 npx prisma migrate dev --name init
 npm run dev
 ```
@@ -214,7 +214,7 @@ npm run dev
 
 ตั้งค่า `.env` ฝั่ง server:
 ```
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE?sslmode=require&schema=public"
 JWT_SECRET="your-secret-key"
 PORT=4000
 ```
@@ -232,6 +232,6 @@ PORT=4000
 ---
 
 ## 8. หมายเหตุเรื่องความง่ายในการใช้งาน
-- ใช้ SQLite เพื่อไม่ต้องติดตั้ง DB server แยก — เหมาะกับโปรเจกต์ขนาดเล็ก-กลาง ย้ายไป PostgreSQL ภายหลังได้ง่ายเพราะใช้ Prisma
+- ใช้ PostgreSQL เพื่อให้ production เก็บข้อมูลถาวรบน Render Free ได้ผ่านฐานข้อมูลภายนอก และใช้ Prisma สำหรับ migrations
 - ฝั่ง frontend ใช้ Vite เพื่อ dev server เร็ว ไม่ซับซ้อนเหมือน CRA
 - Auth ใช้ JWT แบบง่าย เก็บ token ใน localStorage พอสำหรับ admin คนเดียว/ทีมเล็ก

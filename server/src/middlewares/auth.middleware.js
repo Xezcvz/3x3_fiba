@@ -3,12 +3,8 @@ const prisma = require('../prisma');
 
 async function authenticate(req, res, next) {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ message: 'โปรดเข้าสู่ระบบก่อนดำเนินการ (Authorization header missing or invalid)' });
-    }
-
-    const token = authHeader.split(' ')[1];
+    const token = req.cookies?.admin_session;
+    if (!token) return res.status(401).json({ message: 'กรุณาเข้าสู่ระบบก่อนดำเนินการ' });
     const decoded = verifyToken(token);
 
     const admin = await prisma.admin.findUnique({
@@ -23,7 +19,7 @@ async function authenticate(req, res, next) {
     req.admin = admin;
     next();
   } catch (error) {
-    return res.status(401).json({ message: 'Token ไม่ถูกต้องหรือหมดอายุ', error: error.message });
+    return res.status(401).json({ message: 'เซสชันหมดอายุหรือไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่' });
   }
 }
 

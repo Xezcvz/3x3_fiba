@@ -30,6 +30,7 @@ export default function ManageTeams() {
   const { confirm, alert: showAlert } = useModal();
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   // Reset dropdown state
   const [showResetMenu, setShowResetMenu] = useState(false);
@@ -48,6 +49,7 @@ export default function ManageTeams() {
   const [coach, setCoach] = useState('');
   const [city, setCity] = useState('');
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('รุ่น A');
 
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -61,8 +63,10 @@ export default function ManageTeams() {
       setLoading(true);
       const res = await getTeams();
       setTeams(res.data);
+      setLoadError('');
     } catch (err) {
       console.error(err);
+      setLoadError(err.response?.data?.message || 'โหลดข้อมูลทีมไม่สำเร็จ กรุณาลองใหม่');
     } finally {
       setLoading(false);
     }
@@ -77,6 +81,7 @@ export default function ManageTeams() {
     setCoach('');
     setCity('');
     setDescription('');
+    setCategory('รุ่น A');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -90,6 +95,7 @@ export default function ManageTeams() {
     setCoach(team.coach || '');
     setCity(team.city || '');
     setDescription(team.description || '');
+    setCategory(team.category || 'รุ่น A');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -111,6 +117,7 @@ export default function ManageTeams() {
       coach,
       city,
       description,
+      category,
     };
 
     try {
@@ -131,7 +138,7 @@ export default function ManageTeams() {
   const handleDelete = async (id, teamName) => {
     const isConfirmed = await confirm({
       title: 'ยืนยันการลบสโมสร',
-      message: `คุณแน่ใจหรือไม่ว่าต้องการลบทีม "${teamName}"?\n\nคำเตือน: โปรแกรมการแข่งขันและสถิติทั้งหมดที่เกี่ยวข้องกับทีมนี้จะถูกลบไปด้วย`,
+      message: `คุณแน่ใจหรือไม่ว่าต้องการลบทีม "${teamName}"?\n\nระบบจะเก็บประวัติการแข่งขันไว้ หากทีมนี้มีแมตช์เชื่อมโยงจะไม่อนุญาตให้ลบ`,
       confirmText: 'ลบทีมนี้',
       cancelText: 'ยกเลิก',
       type: 'danger',
@@ -171,7 +178,7 @@ export default function ManageTeams() {
   const handleResetGroups = async () => {
     const isConfirmed = await confirm({
       title: '🔄 ยืนยันรีเซ็ตสายของทีมทั้งหมด',
-      message: 'ทีมทุกทีมจะกลับมาเป็นสถานะ "ไม่มีสาย" (ปลดสาย A, B, C ออกทั้งหมด)\nเพื่อเตรียมพร้อมสำหรับการจับสลากแบ่งสายใหม่',
+      message: 'ทีมทุกทีมจะกลับมาเป็นสถานะ "ไม่มีสาย" ได้เฉพาะเมื่อไม่มีประวัติการแข่งขันที่อ้างอิงทีมเหล่านี้\nเพื่อเตรียมพร้อมสำหรับการจับสลากแบ่งสายใหม่',
       confirmText: 'รีเซ็ตสายทั้งหมด',
       cancelText: 'ยกเลิก',
       type: 'warning',
@@ -233,7 +240,7 @@ export default function ManageTeams() {
   const handleResetAllTeams = async () => {
     const isConfirmed = await confirm({
       title: '⚠️ ยืนยันลบสโมสร/ทีมทั้งหมด',
-      message: 'คุณแน่ใจหรือไม่ว่าต้องการลบทีมทั้งหมดออกจากระบบ?\n\nคำเตือน: โปรแกรมการแข่งขัน ตารางคะแนน และสถิติทั้งหมดจะถูกลบไปด้วยอย่างถาวร!',
+      message: 'คุณแน่ใจหรือไม่ว่าต้องการลบทีมทั้งหมดออกจากระบบ?\n\nระบบจะปฏิเสธการลบหากยังมีแมตช์อ้างอิงทีม เพื่อเก็บประวัติการแข่งขันไว้',
       confirmText: 'ล้างทีมทั้งหมด',
       cancelText: 'ยกเลิก',
       type: 'danger',
@@ -243,10 +250,10 @@ export default function ManageTeams() {
 
     try {
       setResetting(true);
-      const res = await resetAllTeams();
+      await resetAllTeams('all');
       await showAlert({
         title: 'สำเร็จ',
-        message: res.data?.message || 'ล้างข้อมูลทีมทั้งหมดเรียบร้อยแล้ว',
+        message: 'ล้างทีมที่ไม่มีประวัติการแข่งขันทั้ง 2 รุ่นเรียบร้อยแล้ว',
         type: 'success',
       });
       await fetchTeams();
@@ -352,7 +359,7 @@ export default function ManageTeams() {
                   <div>
                     <span className="font-bold block text-rose-600">ลบทีมทั้งหมด</span>
                     <span className="text-[11px] text-slate-500">
-                      ล้างข้อมูลทีมและแมตช์ทั้งหมดออกจากระบบ
+                      ล้างทีมได้เฉพาะเมื่อไม่มีประวัติการแข่งขัน
                     </span>
                   </div>
                 </button>
@@ -372,13 +379,14 @@ export default function ManageTeams() {
 
       {/* Teams Table Card */}
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+        {loadError && <div role="alert" className="p-4 text-sm text-rose-800 bg-rose-50 flex justify-between"><span>{loadError}</span><button onClick={fetchTeams} className="font-bold underline">ลองอีกครั้ง</button></div>}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs sm:text-sm">
             <thead className="bg-slate-50 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-100">
               <tr>
                 <th className="py-3.5 px-4">ตราสัญลักษณ์</th>
                 <th className="py-3.5 px-4">ชื่อสโมสร</th>
-                <th className="py-3.5 px-4">สาย (Group)</th>
+        <th className="py-3.5 px-4">รุ่น / กลุ่ม</th>
                 <th className="py-3.5 px-4">จังหวัด</th>
                 <th className="py-3.5 px-4">หัวหน้าผู้ฝึกสอน</th>
                 <th className="py-3.5 px-4 text-center">สถิติ (ช-พ)</th>
@@ -386,7 +394,8 @@ export default function ManageTeams() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
-              {teams.map((t) => (
+              {loading && <tr><td colSpan="7" className="py-12 text-center text-slate-400">กำลังโหลดทีม…</td></tr>}
+              {!loading && !loadError && teams.map((t) => (
                 <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="py-3.5 px-4">
                     <div className="w-9 h-9 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center p-0.5">
@@ -404,7 +413,7 @@ export default function ManageTeams() {
                   </td>
                   <td className="py-3.5 px-4">
                     <span className="bg-primary-50 text-primary-700 px-2.5 py-0.5 rounded-full text-xs font-bold">
-                      สาย {t.group}
+                      {t.category} · กลุ่ม {t.group}
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-slate-500 text-xs">
@@ -483,6 +492,13 @@ export default function ManageTeams() {
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">รุ่นการแข่งขัน *</label>
+                <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl text-sm bg-slate-50 border border-slate-200 font-semibold">
+                  <option value="รุ่น A">รุ่น A</option>
+                  <option value="รุ่น B">รุ่น B</option>
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -496,7 +512,6 @@ export default function ManageTeams() {
                     <option value="A">สาย A (Group A)</option>
                     <option value="B">สาย B (Group B)</option>
                     <option value="C">สาย C</option>
-                    <option value="D">สาย D</option>
                   </select>
                 </div>
 

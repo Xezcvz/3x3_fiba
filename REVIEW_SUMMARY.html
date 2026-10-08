@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a56">
+  <title>สรุปข้อเสนอแนะเว็บไซต์ NVC 3×3</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --navy: #102a56;
+      --blue: #2563eb;
+      --sky: #eaf3ff;
+      --ink: #17243a;
+      --muted: #607089;
+      --line: #e2e9f2;
+      --paper: #ffffff;
+      --bg: #f4f7fb;
+      --red: #be3b43;
+      --amber: #a26006;
+      --green: #147a5a;
+      font-family: "Noto Sans Thai", "Leelawadee UI", Tahoma, system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--bg); line-height: 1.65; }
+    a { color: #1757c2; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    .hero { color: white; background: radial-gradient(circle at 85% 15%, #3d7ef2 0, transparent 28%), linear-gradient(120deg, #102a56, #174c9c); padding: 48px 22px 42px; }
+    .hero-inner, main, footer { width: min(980px, 100% - 36px); margin-inline: auto; }
+    .eyebrow { display: inline-flex; gap: 8px; align-items: center; border: 1px solid #ffffff40; background: #ffffff15; border-radius: 999px; padding: 5px 12px; font-size: 13px; }
+    h1 { font-size: clamp(28px, 5vw, 43px); line-height: 1.25; margin: 17px 0 10px; }
+    .hero p { color: #dfebff; margin: 0; max-width: 680px; }
+    main { padding: 26px 0 48px; }
+    .quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: -1px; }
+    .quick div { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 15px 17px; box-shadow: 0 5px 18px #102a5608; }
+    .quick b { display: block; font-size: 14px; color: var(--navy); }
+    .quick span { color: var(--muted); font-size: 13px; }
+    section { margin-top: 30px; }
+    h2 { font-size: 22px; line-height: 1.35; margin: 0 0 13px; color: var(--navy); }
+    .lead { color: var(--muted); margin: -5px 0 15px; }
+    .priority { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .04em; border-radius: 999px; padding: 3px 9px; margin-bottom: 8px; }
+    .p0 { color: var(--red); background: #fff0f0; }
+    .p1 { color: var(--amber); background: #fff5df; }
+    .p2 { color: var(--green); background: #e8f7f1; }
+    .item { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 19px 21px; margin: 12px 0; box-shadow: 0 5px 18px #102a5607; }
+    .item h3 { font-size: 17px; margin: 0 0 6px; color: var(--ink); }
+    .item p { margin: 6px 0; color: #43536b; }
+    .item ul { margin: 7px 0 0; padding-left: 22px; color: #43536b; }
+    .item li + li { margin-top: 3px; }
+    .callout { border-left: 4px solid var(--blue); background: var(--sky); border-radius: 9px; padding: 13px 16px; color: #173b73; }
+    .steps { counter-reset: step; display: grid; gap: 10px; }
+    .step { counter-increment: step; display: grid; grid-template-columns: 38px 1fr; align-items: start; gap: 12px; background: white; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+    .step::before { content: counter(step); display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--blue); color: white; font-weight: 800; }
+    .step b { display: block; color: var(--navy); }
+    .step span { font-size: 14px; color: var(--muted); }
+    details { background: white; border: 1px solid var(--line); border-radius: 14px; padding: 14px 17px; }
+    summary { cursor: pointer; color: var(--navy); font-weight: 700; }
+    .links { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font-size: 14px; }
+    .note { color: var(--muted); font-size: 13px; }
+    footer { padding: 0 0 32px; color: var(--muted); font-size: 13px; }
+    @media (max-width: 650px) {
+      .hero { padding: 34px 0 30px; }
+      .hero-inner, main, footer { width: min(100% - 26px, 980px); }
+      .quick { grid-template-columns: 1fr; }
+      .item { padding: 16px; }
+      h2 { font-size: 20px; }
+    }
+    @media print {
+      body { background: white; }
+      .hero { print-color-adjust: exact; }
+      .item, .quick div { box-shadow: none; break-inside: avoid; }
+      a { color: inherit; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <span class="eyebrow">🏀 รีวิวเว็บไซต์ · NVC 3×3 Basketball</span>
+      <h1>สรุปสิ่งที่ปรับปรุง<br>ในเว็บไซต์แล้ว</h1>
+      <p>ปรับระบบความปลอดภัย การบันทึกผลตามบาส 3×3 การป้องกันข้อมูลสูญหาย และการแจ้งข้อผิดพลาดแล้ว มีขั้นตอนตั้งค่าแอดมินและ deploy ที่ต้องทำก่อนเปิดใช้งานจริง</p>
+    </div>
+  </header>
+
+  <main>
+    <div class="quick" aria-label="สรุปภาพรวม">
+      <div><b>หน้าตาและโครงสร้าง</b><span>ดี · มือถืออ่านง่าย มีทางลัดหลักครบ</span></div>
+      <div><b>แก้แล้ว</b><span>บัญชีตัวอย่าง · validation · SSE · migrations</span></div>
+      <div><b>ต้องทำก่อนเปิดใช้</b><span>ตั้งค่า secret, สร้างแอดมิน และตั้ง persistent storage</span></div>
+    </div>
+
+    <section>
+      <h2>งานที่ทำเสร็จ</h2>
+      <p class="lead">สรุปการเปลี่ยนแปลงหลักในโค้ด</p>
+
+      <article class="item">
+        <span class="priority p0">เสร็จ · ความปลอดภัย</span>
+        <h3>เอาบัญชีเริ่มต้นออกและป้องกัน session</h3>
+        <p>เอา admin/admin123 ออกจากหน้า Login และ seed ใช้ HttpOnly cookie, อายุ 8 ชั่วโมง, จำกัดการลอง login และบังคับตั้ง JWT secret ที่มีความยาวเหมาะสม</p>
+        <ul><li>สร้างบัญชีแอดมินเองผ่าน environment variables</li><li>จำกัด CORS ด้วย allowlist เมื่อเป็น production</li><li>เพิ่ม Helmet และจำกัดขนาด request body</li></ul>
+      </article>
+
+      <article class="item">
+        <span class="priority p0">เสร็จ · ความถูกต้องของการแข่งขัน</span>
+        <h3>ทำให้ข้อมูลคะแนนตรงกับกติกา 3×3</h3>
+        <p>seed ใหม่สร้างตาราง 24 ทีมและ 36 เกมรอบแบ่งกลุ่มในสถานะ upcoming ไม่มีผลคะแนนปลอม ตรวจคะแนน 3×3 และไม่แปลงข้อมูลควอเตอร์เก่ามาเป็นสถิติการยิง</p>
+        <div class="callout">ตามคู่มือ FIBA 3×3 เกมปกติเล่น 10 นาที ทีมแรกที่ถึง 21 แต้มชนะ และต่อเวลาชนะเมื่อทำเพิ่มได้ 2 แต้ม <a href="https://fiba3x3.com/docs/wabc-3x3-players-guide.pdf" target="_blank" rel="noreferrer">อ่านคู่มือ FIBA</a></div>
+      </article>
+
+      <article class="item">
+        <span class="priority p0">เสร็จ · ฐานข้อมูลภายนอก</span>
+        <h3>Render Free ใช้ PostgreSQL ผ่าน Prisma</h3>
+        <p>render.yaml ตั้งค่า Render Free ให้ต่อ PostgreSQL ภายนอก ไฟล์ SQLite ไม่ถูกใช้ใน production และข้อมูลจึงไม่ผูกกับ filesystem ที่ถูกล้างเมื่อ Render deploy หรือ restart</p>
+        <ul><li>ตั้ง DATABASE_URL แบบ pooled และ DIRECT_URL แบบ direct ใน Render Dashboard</li><li>ฐานข้อมูลฟรียังมีเพดาน quota; เมื่อใช้ครบอาจหยุด query ชั่วคราว แต่ข้อมูลคงอยู่</li></ul>
+      </article>
+    </section>
+
+    <section>
+      <h2>ตรวจเพิ่มก่อนเปิดใช้งานจริง</h2>
+      <article class="item">
+        <span class="priority p1">สำคัญ · ประสบการณ์ผู้ใช้</span>
+        <h3>ตั้งค่าความลับและสร้างบัญชีผู้ดูแล</h3>
+        <p>คัดลอก server/.env.example เป็น server/.env แล้วตั้ง JWT_SECRET, ADMIN_USERNAME, ADMIN_PASSWORD จากนั้นรัน migrations, seed และ npm run admin:create</p>
+      </article>
+      <article class="item">
+        <span class="priority p1">สำคัญ · ตารางคะแนน</span>
+        <h3>ย้ายข้อมูล SQLite เดิมก่อน deploy ครั้งแรก</h3>
+        <p>รัน prisma:migrate:deploy กับ PostgreSQL ปลายทางที่ว่าง แล้ว npm run db:import-sqlite เพื่อเก็บทีม, แมตช์, ข่าว, admin และ IDs เดิม ก่อน deploy Render ครั้งแรก</p>
+      </article>
+      <article class="item">
+        <span class="priority p1">สำคัญ · คะแนนสด</span>
+        <h3>รัน build และตรวจหน้าจอจริง</h3>
+        <p>ยังไม่ได้รัน test suite หรือยืนยัน end-to-end กับฐานข้อมูลจริงในรอบแก้ไขนี้ ให้รัน build และตรวจ login, บันทึกคะแนน, ผลและ standings ใน environment ที่ตั้งค่าแล้ว</p>
+      </article>
+      <article class="item">
+        <span class="priority p2">ควรทำ · ความเสถียร</span>
+        <h3>ข้อมูลรอบน็อกเอาต์เริ่มเป็น TBD</h3>
+        <p>เกมรองและเกมชิงไม่ผูกกับทีม placeholder และการลบทีม/ย้ายกลุ่มถูกปฏิเสธเมื่อจะทำลายประวัติการแข่งขัน</p>
+      </article>
+      <article class="item">
+        <span class="priority p2">ควรทำ · แพ็กเกจ</span>
+        <h3>มีข้อความ error และอัปเดตหน้าอัตโนมัติ</h3>
+        <p>หน้าสาธารณะและหน้าจัดการแสดง error พร้อมปุ่มลองใหม่ และใช้ Server-Sent Events เพื่อโหลดข้อมูลล่าสุดหลัง admin เปลี่ยนข้อมูล</p>
+      </article>
+    </section>
+
+    <section>
+      <h2>สิ่งที่ต้องทำโดยผู้ดูแลระบบ</h2>
+      <div class="steps">
+        <div class="step"><div><b>ตั้งค่า .env</b><span>กำหนด secret และบัญชี admin ที่เดายาก ห้ามเผยแพร่ไฟล์ .env</span></div></div>
+        <div class="step"><div><b>ตั้งค่า PostgreSQL</b><span>ใส่ DATABASE_URL, DIRECT_URL, ADMIN_USERNAME และ ADMIN_PASSWORD ใน Render Dashboard</span></div></div>
+        <div class="step"><div><b>คงข้อมูล SQLite เดิม</b><span>ใช้ migration และ db:import-sqlite ก่อน deploy ครั้งแรก; ฐานข้อมูลปลายทางต้องว่าง</span></div></div>
+        <div class="step"><div><b>ตรวจ end-to-end ใน staging</b><span>ยืนยัน flow ผู้ดูแลและหน้าเว็บจริงก่อนประกาศใช้</span></div></div>
+      </div>
+    </section>
+
+    <section>
+      <details>
+        <summary>หมายเหตุการตรวจและไฟล์อ้างอิง</summary>
+        <p class="note">การเปลี่ยนแปลงทำในโค้ด local ยังไม่ได้ deploy และไม่ได้รัน test suite ตามข้อกำหนดงาน ตรวจไฟล์ README และ USER_MANUAL สำหรับขั้นตอนตั้งค่าก่อนใช้งาน</p>
+        <div class="links">
+          <a href="client/src/pages/admin/AdminLogin.jsx">หน้า Login</a>
+          <a href="server/src/utils/jwt.js">การตั้ง JWT</a>
+          <a href="server/src/seed.js">ข้อมูลตัวอย่าง</a>
+          <a href="render.yaml">ตั้งค่า Deploy</a>
+          <a href="package.json">คำสั่ง Build</a>
+          <a href="client/src/pages/Results.jsx">หน้าผลการแข่งขัน</a>
+        </div>
+      </details>
+    </section>
+  </main>
+  <footer>สรุปสำหรับเว็บไซต์ NVC 3×3 Basketball · จัดทำจากการตรวจโค้ดและหน้าจอที่เปิดได้</footer>
+</body>
+</html>

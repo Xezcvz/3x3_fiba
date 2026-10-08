@@ -216,6 +216,7 @@ export default function ManageDraw() {
   const [teams, setTeams] = useState([]);
   const [groups, setGroups] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawAnimDone, setDrawAnimDone] = useState(false);
@@ -236,14 +237,18 @@ export default function ManageDraw() {
   const loadData = useCallback(async (cat = category) => {
     try {
       setLoading(true);
-      const [groupsRes, teamsRes, bracketRes] = await Promise.all([
-        getGroups(),
-        getTeams(),
+      const [teamsRes, bracketRes] = await Promise.all([
+        getTeams({ category: cat }),
         getTournamentBracket(cat),
       ]);
-      setGroups(groupsRes.data.groups);
+      setGroups(teamsRes.data.reduce((grouped, team) => {
+        const groupName = team.group || 'Unassigned';
+        grouped[groupName] = [...(grouped[groupName] || []), team];
+        return grouped;
+      }, {}));
       setTeams(teamsRes.data);
       setBracketData(bracketRes.data);
+      setLoadError('');
 
       // Populate manual assignments from current data
       const init = {};
@@ -251,6 +256,7 @@ export default function ManageDraw() {
       setManualAssignments(init);
     } catch (err) {
       console.error(err);
+      setLoadError(err.response?.data?.message || 'โหลดข้อมูลสายการแข่งขันไม่สำเร็จ');
     } finally {
       setLoading(false);
     }
@@ -273,7 +279,7 @@ export default function ManageDraw() {
     setDrawAnimDone(false);
 
     try {
-      const res = await autoDraw({ groupCount });
+      const res = await autoDraw({ groupCount, category });
       setPendingDrawResult(res.data);
     } catch (err) {
       setIsDrawing(false);
@@ -289,7 +295,11 @@ export default function ManageDraw() {
   const handleAnimDone = () => {
     setIsDrawing(false);
     if (pendingDrawResult) {
-      setGroups(pendingDrawResult.groups);
+      setGroups(pendingDrawResult.teams.reduce((grouped, team) => {
+        const groupName = team.group || 'Unassigned';
+        grouped[groupName] = [...(grouped[groupName] || []), team];
+        return grouped;
+      }, {}));
       setTeams(pendingDrawResult.teams);
       const init = {};
       pendingDrawResult.teams.forEach(t => { init[t.id] = t.group || ''; });
@@ -306,8 +316,12 @@ export default function ManageDraw() {
     }));
     try {
       setSaving(true);
-      const res = await manualDraw(assignments);
-      setGroups(res.data.groups);
+      const res = await manualDraw(assignments, category);
+      setGroups(res.data.teams.reduce((grouped, team) => {
+        const groupName = team.group || 'Unassigned';
+        grouped[groupName] = [...(grouped[groupName] || []), team];
+        return grouped;
+      }, {}));
       setTeams(res.data.teams);
       setMode('view');
       await alert({
@@ -337,7 +351,7 @@ export default function ManageDraw() {
     });
     if (!ok) return;
     try {
-      await resetDraw();
+      await resetDraw(category);
       await loadData();
       await alert({
         title: 'รีเซ็ตสำเร็จ',
@@ -388,6 +402,8 @@ export default function ManageDraw() {
       <DrawAnimation isDrawing={isDrawing} onDone={handleAnimDone} />
 
       <div className="space-y-8 pb-16">
+        {loadError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex justify-between text-sm text-rose-800"><span>{loadError}</span><button onClick={() => loadData(category)} className="font-bold underline">ลองอีกครั้ง</button></div>}
+        {teams.some((team) => team.category !== category) && <div role="status" className="rounded-xl bg-sky-50 border border-sky-100 px-4 py-3 text-sm text-sky-900">ข้อมูลแอดมินแสดงทั้ง 2 รุ่น ส่วนการจับสายและผังด้านล่างแสดง {category} เท่านั้น</div>}
 
         {/* ── Page Header ── */}
         <div className="bg-gradient-to-r from-primary-700 via-primary-600 to-indigo-600 rounded-3xl p-6 sm:p-8 text-white shadow-xl shadow-primary-500/20">
@@ -459,7 +475,7 @@ export default function ManageDraw() {
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1.5">จำนวนสาย</label>
                 <div className="flex gap-2">
-                  {[2, 3, 4].map(n => (
+                  {[2, 3].map(n => (
                     <button
                       key={n}
                       onClick={() => setGroupCount(n)}
@@ -474,11 +490,11 @@ export default function ManageDraw() {
               </div>
               <div className="text-xs text-slate-500 leading-relaxed max-w-xs">
                 ทีม {teams.length} ทีม จะถูกสุ่มเข้า {groupCount} สาย<br />
-                ({Math.ceil(teams.length / groupCount)}–{Math.ceil(teams.length / groupCount)} ทีม/สาย)
+                โดยมีได้ไม่เกิน 4 ทีมต่อกลุ่ม
               </div>
               <button
                 onClick={handleAutoDraw}
-                disabled={teams.length === 0}
+                disabled={teams.length === 0 || teams.length > groupCount * 4}
                 className="px-6 py-2.5 bg-gradient-to-r from-primary-600 to-indigo-600 hover:from-primary-700 hover:to-indigo-700 
                   text-white rounded-xl font-bold text-sm shadow-md shadow-primary-200 transition-all flex items-center gap-2 
                   disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
@@ -500,7 +516,7 @@ export default function ManageDraw() {
               </h2>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500">จำนวนสาย:</span>
-                {[2, 3, 4].map(n => (
+                {[2, 3].map(n => (
                   <button
                     key={n}
                     onClick={() => setGroupCount(n)}

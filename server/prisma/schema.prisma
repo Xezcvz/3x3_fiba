@@ -1,10 +1,12 @@
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../generated/prisma-client"
 }
 
 model Team {
@@ -19,23 +21,30 @@ model Team {
   createdAt   DateTime  @default(now())
   homeMatches Match[]   @relation("HomeTeam")
   awayMatches Match[]   @relation("AwayTeam")
+
+  @@index([category, group])
 }
 
 model Match {
   id            Int       @id @default(autoincrement())
-  homeTeam      Team      @relation("HomeTeam", fields: [homeTeamId], references: [id], onDelete: Cascade)
-  homeTeamId    Int
-  awayTeam      Team      @relation("AwayTeam", fields: [awayTeamId], references: [id], onDelete: Cascade)
-  awayTeamId    Int
+  homeTeam      Team?     @relation("HomeTeam", fields: [homeTeamId], references: [id], onDelete: Restrict)
+  homeTeamId    Int?
+  awayTeam      Team?     @relation("AwayTeam", fields: [awayTeamId], references: [id], onDelete: Restrict)
+  awayTeamId    Int?
   category      String?   @default("รุ่น A") // รุ่น A, รุ่น B
   homeScore     Int?
   awayScore     Int?
-  quarterScores String?   // JSON representation of quarter scores
+  quarterScores String?   // Legacy column storing 3x3 shot counts and foul details as JSON
   matchDate     DateTime
   venue         String?   // สนาม 1, สนาม 2
   status        String    @default("upcoming") // upcoming | live | finished
   round         String?   // รอบแบ่งกลุ่ม กลุ่ม A, รอบ 8 ทีม, รอบรองชนะเลิศ, ชิงชนะเลิศ, ชิงอันดับ 3
   createdAt     DateTime  @default(now())
+
+  @@index([status, matchDate])
+  @@index([category, status, matchDate])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
 }
 
 model News {
@@ -45,6 +54,8 @@ model News {
   category  String?  @default("ประกาศ")
   imageUrl  String?
   createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model Admin {

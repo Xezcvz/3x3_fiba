@@ -4,8 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { Shield, Lock, User, AlertCircle, ArrowRight } from 'lucide-react';
 
 export default function AdminLogin() {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { loginUser } = useAuth();
@@ -51,13 +51,15 @@ export default function AdminLogin() {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+            <label htmlFor="admin-username" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
               ชื่อผู้ใช้ (Username)
             </label>
             <div className="relative">
               <User className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
+                id="admin-username"
                 type="text"
+                autoComplete="username"
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -68,26 +70,21 @@ export default function AdminLogin() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+            <label htmlFor="admin-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
               รหัสผ่าน (Password)
             </label>
             <div className="relative">
               <Lock className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
+                id="admin-password"
                 type="password"
+                autoComplete="current-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm bg-slate-50 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all font-medium"
                 placeholder="กรอกรหัสผ่าน..."
               />
-            </div>
-          </div>
-
-          <div className="p-3 bg-primary-50 rounded-xl border border-primary-100 text-xs text-primary-800 space-y-1">
-            <span className="font-bold">ข้อมูลเข้าสู่ระบบเริ่มต้น (Default Demo):</span>
-            <div className="font-mono text-[11px] text-primary-700">
-              Username: <strong className="font-bold">admin</strong> | Password: <strong className="font-bold">admin123</strong>
             </div>
           </div>
 

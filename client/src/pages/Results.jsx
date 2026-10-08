@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { getMatches, getTeams } from '../services/api';
 import MatchCard from '../components/MatchCard';
+import ApiErrorNotice from '../components/ApiErrorNotice';
+import useLiveUpdates from '../hooks/useLiveUpdates';
 import { Award, Trophy, TrendingUp, Filter } from 'lucide-react';
 
 export default function Results() {
@@ -9,14 +11,11 @@ export default function Results() {
   const [selectedCategory, setSelectedCategory] = useState('รุ่น A');
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    fetchData();
-  }, [selectedCategory, selectedGroup]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async ({ showLoading = true } = {}) => {
+    if (showLoading) setLoading(true);
     try {
-      setLoading(true);
       const matchParams = { status: 'finished' };
       if (selectedCategory !== 'all') matchParams.category = selectedCategory;
       if (selectedGroup !== 'all') matchParams.group = selectedGroup;
@@ -32,22 +31,30 @@ export default function Results() {
 
       setResults(matchesRes.data);
       setTeams(teamsRes.data);
+      setLoadError(false);
     } catch (err) {
       console.error(err);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCategory, selectedGroup]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+  useLiveUpdates(() => fetchData({ showLoading: false }));
 
   const groupKeys = ['A', 'B', 'C'].filter(
     (g) => selectedGroup === 'all' || selectedGroup === g
   );
 
-  const getTeamsInGroup = (groupLetter) => {
+  const getTeamsInGroup = (groupLetter, category) => {
     return teams
-      .filter((t) => t.group === groupLetter)
+      .filter((team) => team.group === groupLetter && team.category === category)
       .sort((a, b) => (b.stats?.pts || 0) - (a.stats?.pts || 0) || (b.stats?.diff || 0) - (a.stats?.diff || 0));
   };
+
+  const standingsGroups = (selectedCategory === 'all' ? ['รุ่น A', 'รุ่น B'] : [selectedCategory])
+    .flatMap((category) => groupKeys.map((group) => ({ category, group })));
 
   const groupColors = {
     A: { header: 'from-blue-600 to-indigo-700', badge: 'bg-blue-100 text-blue-700' },
@@ -119,6 +126,8 @@ export default function Results() {
         </div>
       </div>
 
+      {loadError && <ApiErrorNotice onRetry={() => fetchData()} />}
+
       {/* Standings Tables Section */}
       <section className="space-y-5">
         <div className="flex items-center justify-between">
@@ -134,14 +143,14 @@ export default function Results() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {groupKeys.map((g) => {
-            const groupTeams = getTeamsInGroup(g);
-            const styling = groupColors[g] || { header: 'from-slate-700 to-slate-800' };
+          {standingsGroups.map(({ category, group }) => {
+            const groupTeams = getTeamsInGroup(group, category);
+            const styling = groupColors[group] || { header: 'from-slate-700 to-slate-800' };
 
             return (
-              <div key={g} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+              <div key={`${category}-${group}`} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
                 <div className={`px-5 py-3.5 bg-gradient-to-r ${styling.header} text-white flex items-center justify-between`}>
-                  <span className="font-bold text-sm">กลุ่ม {g} ({selectedCategory})</span>
+                  <span className="font-bold text-sm">{category} · กลุ่ม {group}</span>
                   <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded font-medium">{groupTeams.length} ทีม</span>
                 </div>
                 <div className="overflow-x-auto flex-1">
@@ -161,7 +170,7 @@ export default function Results() {
                       {groupTeams.length === 0 ? (
                         <tr>
                           <td colSpan="7" className="py-8 text-center text-slate-400 text-xs">
-                            ยังไม่มีทีมในกลุ่ม {g}
+                            ยังไม่มีทีมในกลุ่ม {group}
                           </td>
                         </tr>
                       ) : (
@@ -225,7 +234,7 @@ export default function Results() {
               <div key={i} className="h-48 bg-white rounded-2xl border border-slate-100 animate-pulse" />
             ))}
           </div>
-        ) : results.length > 0 ? (
+        ) : loadError ? null : results.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {results.map((match) => (
               <MatchCard key={match.id} match={match} />

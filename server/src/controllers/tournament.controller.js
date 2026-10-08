@@ -2,6 +2,9 @@ const prisma = require('../prisma');
 
 // Helper to compute team standings in groups for a given category (division)
 async function computeGroupStandings(category = 'รุ่น A') {
+  if (!['รุ่น A', 'รุ่น B', 'all'].includes(category)) {
+    throw Object.assign(new Error('รุ่นการแข่งขันไม่ถูกต้อง'), { statusCode: 400 });
+  }
   const where = {};
   if (category && category !== 'all') {
     where.category = category;
@@ -197,6 +200,9 @@ async function computeGroupStandings(category = 'รุ่น A') {
 async function getTournamentBracket(req, res, next) {
   try {
     const category = req.query.category || 'รุ่น A';
+    if (!['รุ่น A', 'รุ่น B', 'all'].includes(category)) {
+      return res.status(400).json({ message: 'รุ่นการแข่งขันไม่ถูกต้อง' });
+    }
     const { groups, thirdPlaceComparison, qualifiedTeams, groupStageStatus } = await computeGroupStandings(category);
 
     const where = {};
@@ -259,6 +265,7 @@ async function getTournamentBracket(req, res, next) {
       },
     });
   } catch (error) {
+    if (error.statusCode === 400) return res.status(400).json({ message: error.message });
     next(error);
   }
 }
@@ -268,7 +275,10 @@ async function getTournamentBracket(req, res, next) {
 // Supports either automatic seeding from group standings OR manual seeds from admin
 async function generateKnockoutMatches(req, res, next) {
   try {
-    const { category = 'รุ่น A', seeds } = req.body;
+    const { category = 'รุ่น A', seeds } = req.body || {};
+    if (!['รุ่น A', 'รุ่น B'].includes(category)) {
+      return res.status(400).json({ message: 'รุ่นการแข่งขันไม่ถูกต้อง' });
+    }
 
     // Check if knockout already generated for this category
     const existing = await prisma.match.findMany({
@@ -294,8 +304,6 @@ async function generateKnockoutMatches(req, res, next) {
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const createdMatches = [];
     let qfPairs = [];
-    let placeholderHomeId = null;
-    let placeholderAwayId = null;
 
     if (seeds && Array.isArray(seeds) && seeds.length === 4) {
       // Manual seeds mode: [{ homeTeamId, awayTeamId }, ...]
@@ -309,6 +317,19 @@ async function generateKnockoutMatches(req, res, next) {
             message: `กรุณาเลือกทีมเหย้าและทีมเยือนให้ครบทั้ง 4 คู่ (คู่ที่ ${i + 1} ข้อมูลไม่ครบ)`,
           });
         }
+        if (Number(s.homeTeamId) === Number(s.awayTeamId)) {
+          return res.status(400).json({ message: `ทีมในคู่ที่ ${i + 1} ต้องเป็นคนละทีม` });
+        }
+        const selectedTeams = await prisma.team.findMany({
+          where: { id: { in: [Number(s.homeTeamId), Number(s.awayTeamId)] } },
+          select: { id: true, category: true },
+        });
+        if (selectedTeams.length !== 2 || selectedTeams.some((team) => team.category !== category)) {
+          return res.status(400).json({ message: `คู่ที่ ${i + 1} ต้องเลือกทีมที่มีอยู่และอยู่ในรุ่นเดียวกัน` });
+        }
+        if (qfPairs.some((pair) => [pair.homeTeamId, pair.awayTeamId].includes(Number(s.homeTeamId)) || [pair.homeTeamId, pair.awayTeamId].includes(Number(s.awayTeamId)))) {
+          return res.status(400).json({ message: 'แต่ละทีมต้องปรากฏในรอบ 8 ทีมเพียงคู่เดียว' });
+        }
         qfPairs.push({
           homeTeamId: Number(s.homeTeamId),
           awayTeamId: Number(s.awayTeamId),
@@ -317,13 +338,11 @@ async function generateKnockoutMatches(req, res, next) {
           label: `รอบ 8 ทีม คู่ที่ ${i + 1} (${category}: QF ${i + 1})`,
         });
       }
-      placeholderHomeId = qfPairs[0].homeTeamId;
-      placeholderAwayId = qfPairs[0].awayTeamId;
     } else {
       // Automatic seeding from group standings
       const { groups, qualifiedTeams, thirdPlaceComparison } = await computeGroupStandings(category);
 
-      if (qualifiedTeams.length < 8) {
+      if (qualifiedTeams.length < 8 || !['A', 'B', 'C'].every((group) => groups[group]?.length >= 3)) {
         return res.status(400).json({
           message: `มีทีมเข้ารอบจากคะแนนกลุ่มเพียง ${qualifiedTeams.length} ทีม (ต้องการ 8 ทีม เพื่อจัดรอบ 8 ทีมแบบอัตโนมัติ หรือใช้ปุ่ม "จัด Seed เอง")`,
         });
@@ -355,8 +374,6 @@ async function generateKnockoutMatches(req, res, next) {
         { homeTeamId: b1.id, awayTeamId: best3rd_1.id, venue: 'สนาม 1', timeOffset: 13.5, label: `รอบ 8 ทีม คู่ที่ 3 (${category}: B1 vs อันดับ 3)` },
         { homeTeamId: c1.id, awayTeamId: a2.id, venue: 'สนาม 2', timeOffset: 13.75, label: `รอบ 8 ทีม คู่ที่ 4 (${category}: C1 vs A2)` },
       ];
-      placeholderHomeId = a1.id;
-      placeholderAwayId = b2.id;
     }
 
     // Create 4 QF Matches
@@ -376,11 +393,12 @@ async function generateKnockoutMatches(req, res, next) {
       createdMatches.push(match);
     }
 
-    // SF 1 (Winner QF1 vs Winner QF2) — สนาม 1
+    // Leave teams unset until the upstream knockout matches determine them.
+    // This prevents placeholder teams from receiving false match statistics.
     const sf1 = await prisma.match.create({
       data: {
-        homeTeamId: placeholderHomeId,
-        awayTeamId: placeholderAwayId,
+        homeTeamId: null,
+        awayTeamId: null,
         category,
         round: `รอบรองชนะเลิศ SF 1 (${category}: ชนะ QF1 vs ชนะ QF2)`,
         venue: 'สนาม 1',
@@ -394,8 +412,8 @@ async function generateKnockoutMatches(req, res, next) {
     // SF 2 (Winner QF3 vs Winner QF4) — สนาม 2
     const sf2 = await prisma.match.create({
       data: {
-        homeTeamId: placeholderHomeId,
-        awayTeamId: placeholderAwayId,
+        homeTeamId: null,
+        awayTeamId: null,
         category,
         round: `รอบรองชนะเลิศ SF 2 (${category}: ชนะ QF3 vs ชนะ QF4)`,
         venue: 'สนาม 2',
@@ -409,8 +427,8 @@ async function generateKnockoutMatches(req, res, next) {
     // 3rd Place Match — สนาม 2 (TBD: losers of SF)
     const thirdMatch = await prisma.match.create({
       data: {
-        homeTeamId: placeholderHomeId,
-        awayTeamId: placeholderAwayId,
+        homeTeamId: null,
+        awayTeamId: null,
         category,
         round: `ชิงอันดับ 3 (${category}: แพ้ SF1 vs แพ้ SF2)`,
         venue: 'สนาม 2',
@@ -424,8 +442,8 @@ async function generateKnockoutMatches(req, res, next) {
     // Championship Final — สนาม 1 (TBD: winners of SF)
     const finalMatch = await prisma.match.create({
       data: {
-        homeTeamId: placeholderHomeId,
-        awayTeamId: placeholderAwayId,
+        homeTeamId: null,
+        awayTeamId: null,
         category,
         round: `ชิงชนะเลิศ (${category}: ชนะ SF1 vs ชนะ SF2)`,
         venue: 'สนาม 1',
@@ -447,103 +465,82 @@ async function generateKnockoutMatches(req, res, next) {
 
 // Internal helper function to advance knockout winner
 async function advanceWinnerInternal(matchId) {
-  const match = await prisma.match.findUnique({
-    where: { id: Number(matchId) },
-    include: { homeTeam: true, awayTeam: true },
+  return prisma.$transaction(async (transaction) => {
+    const match = await transaction.match.findUnique({
+      where: { id: Number(matchId) },
+      include: { homeTeam: true, awayTeam: true },
+    });
+
+    if (!match || match.status !== 'finished' || match.homeScore === null || match.awayScore === null || !match.homeTeam || !match.awayTeam) {
+      return { success: false, message: 'แมตช์นี้ยังแข่งไม่จบ หรือยังไม่มีผลคะแนน' };
+    }
+    if (!match.round || (!match.round.includes('รอบ 8 ทีม') && !match.round.includes('QF') && !match.round.includes('รองชนะเลิศ'))) {
+      return { success: false, message: 'เลื่อนทีมได้เฉพาะแมตช์รอบน็อกเอาต์' };
+    }
+
+    const winner = match.homeScore > match.awayScore ? match.homeTeam : match.awayTeam;
+    const loser = match.homeScore > match.awayScore ? match.awayTeam : match.homeTeam;
+    let updatedNext = null;
+
+    if (match.round.includes('รอบ 8 ทีม') || match.round.includes('QF')) {
+      const quarterFinalNumber = Number(match.round.match(/(?:คู่ที่ |QF\s*)([1-4])/i)?.[1]);
+      if (!quarterFinalNumber) return { success: false, message: 'ไม่สามารถระบุหมายเลขคู่รอบ 8 ทีมได้' };
+      const semiFinalNumber = quarterFinalNumber <= 2 ? 1 : 2;
+      const isHomeSlot = quarterFinalNumber % 2 === 1;
+      const semiFinal = await transaction.match.findFirst({
+        where: { category: match.category, round: { contains: `SF ${semiFinalNumber}` } },
+      });
+      if (semiFinal) {
+        updatedNext = await transaction.match.update({
+          where: { id: semiFinal.id },
+          data: isHomeSlot ? { homeTeamId: winner.id } : { awayTeamId: winner.id },
+          include: { homeTeam: true, awayTeam: true },
+        });
+      }
+    } else {
+      const semiFinalNumber = Number(match.round.match(/SF\s*([12])/i)?.[1] || '1');
+      const isHomeSlot = semiFinalNumber === 1;
+      const finalMatch = await transaction.match.findFirst({
+        where: {
+          category: match.category,
+          round: { contains: 'ชิงชนะเลิศ' },
+          NOT: { round: { contains: 'รอง' } },
+        },
+      });
+      if (finalMatch) {
+        updatedNext = await transaction.match.update({
+          where: { id: finalMatch.id },
+          data: isHomeSlot ? { homeTeamId: winner.id } : { awayTeamId: winner.id },
+          include: { homeTeam: true, awayTeam: true },
+        });
+      }
+      const thirdPlace = await transaction.match.findFirst({
+        where: { category: match.category, round: { contains: 'อันดับ 3' } },
+      });
+      if (thirdPlace) {
+        await transaction.match.update({
+          where: { id: thirdPlace.id },
+          data: isHomeSlot ? { homeTeamId: loser.id } : { awayTeamId: loser.id },
+        });
+      }
+    }
+
+    return {
+      success: true,
+      message: `ทีม ${winner.name} ชนะและได้สิทธิ์เข้ารอบต่อไป!`,
+      winner,
+      loser,
+      nextMatch: updatedNext,
+    };
   });
-
-  if (!match || match.status !== 'finished' || match.homeScore === null || match.awayScore === null) {
-    return { success: false, message: 'แมตช์นี้ยังแข่งไม่จบ หรือยังไม่มีผลคะแนน' };
-  }
-
-  const winner = match.homeScore > match.awayScore ? match.homeTeam : match.awayTeam;
-  const loser = match.homeScore > match.awayScore ? match.awayTeam : match.homeTeam;
-  let updatedNext = null;
-
-  // 1) If QF finished: advance winner into Semi-Final
-  if (match.round && (match.round.includes('รอบ 8 ทีม') || match.round.includes('QF'))) {
-    const isQF1 = match.round.includes('คู่ที่ 1') || match.round.includes('QF 1');
-    const isQF2 = match.round.includes('คู่ที่ 2') || match.round.includes('QF 2');
-    const isQF3 = match.round.includes('คู่ที่ 3') || match.round.includes('QF 3');
-    const isQF4 = match.round.includes('คู่ที่ 4') || match.round.includes('QF 4');
-
-    if (isQF1 || isQF2) {
-      const sf1 = await prisma.match.findFirst({
-        where: { category: match.category, round: { contains: 'SF 1' } },
-      });
-      if (sf1) {
-        updatedNext = await prisma.match.update({
-          where: { id: sf1.id },
-          data: isQF1 ? { homeTeamId: winner.id } : { awayTeamId: winner.id },
-          include: { homeTeam: true, awayTeam: true },
-        });
-      }
-    } else if (isQF3 || isQF4) {
-      const sf2 = await prisma.match.findFirst({
-        where: { category: match.category, round: { contains: 'SF 2' } },
-      });
-      if (sf2) {
-        updatedNext = await prisma.match.update({
-          where: { id: sf2.id },
-          data: isQF3 ? { homeTeamId: winner.id } : { awayTeamId: winner.id },
-          include: { homeTeam: true, awayTeam: true },
-        });
-      }
-    }
-  }
-
-  // 2) If SF finished: advance winner to Final, loser to 3rd place
-  else if (match.round && match.round.includes('รองชนะเลิศ') && !match.round.includes('ก่อน')) {
-    const isSF1 = match.round.includes('SF 1') || match.round.includes('คู่ที่ 1');
-
-    // Final match
-    const finalMatch = await prisma.match.findFirst({
-      where: {
-        category: match.category,
-        round: { contains: 'ชิงชนะเลิศ' },
-        NOT: { round: { contains: 'รอง' } },
-      },
-    });
-
-    if (finalMatch) {
-      updatedNext = await prisma.match.update({
-        where: { id: finalMatch.id },
-        data: isSF1 ? { homeTeamId: winner.id } : { awayTeamId: winner.id },
-        include: { homeTeam: true, awayTeam: true },
-      });
-    }
-
-    // 3rd place match
-    const thirdMatch = await prisma.match.findFirst({
-      where: {
-        category: match.category,
-        round: { contains: 'อันดับ 3' },
-      },
-    });
-
-    if (thirdMatch) {
-      await prisma.match.update({
-        where: { id: thirdMatch.id },
-        data: isSF1 ? { homeTeamId: loser.id } : { awayTeamId: loser.id },
-      });
-    }
-  }
-
-  return {
-    success: true,
-    message: `ทีม ${winner.name} ชนะและได้สิทธิ์เข้ารอบต่อไป!`,
-    winner,
-    loser,
-    nextMatch: updatedNext,
-  };
 }
 
 // POST /api/tournament/advance-winner
 // Advances the winner of a completed knockout match to the next round
 async function advanceKnockoutWinner(req, res, next) {
   try {
-    const { matchId } = req.body;
-    if (!matchId) return res.status(400).json({ message: 'กรุณาระบุ matchId' });
+    const { matchId } = req.body || {};
+    if (!Number.isSafeInteger(Number(matchId)) || Number(matchId) < 1) return res.status(400).json({ message: 'กรุณาระบุ matchId ที่ถูกต้อง' });
 
     const result = await advanceWinnerInternal(matchId);
     if (!result.success) {
@@ -556,11 +553,71 @@ async function advanceKnockoutWinner(req, res, next) {
   }
 }
 
+async function clearDownstreamKnockoutSlots(transaction, match) {
+  if (!match.round || !match.round.includes('รอบ 8 ทีม')) return;
+  const quarterFinalNumber = Number(match.round.match(/คู่ที่\s*([1-4])/i)?.[1]);
+  if (!quarterFinalNumber) return;
+
+  const downstreamIds = new Set();
+  const semiFinalNumber = quarterFinalNumber <= 2 ? 1 : 2;
+  const semiFinal = await transaction.match.findFirst({
+    where: { category: match.category, round: { contains: `SF ${semiFinalNumber}` } },
+  });
+  if (!semiFinal) return;
+  downstreamIds.add(semiFinal.id);
+
+  const semiFinalHasStarted = semiFinal.status === 'live' || semiFinal.status === 'finished';
+  if (semiFinalHasStarted) {
+    const nextMatches = await transaction.match.findMany({
+      where: {
+        category: match.category,
+        OR: [
+          { round: { contains: 'ชิงชนะเลิศ' }, NOT: { round: { contains: 'รอง' } } },
+          { round: { contains: 'อันดับ 3' } },
+        ],
+      },
+      select: { id: true },
+    });
+    nextMatches.forEach((nextMatch) => downstreamIds.add(nextMatch.id));
+  }
+
+  const downstreamMatches = await transaction.match.findMany({
+    where: { id: { in: [...downstreamIds] } },
+    select: { id: true, status: true },
+  });
+  if (downstreamMatches.some((downstreamMatch) => downstreamMatch.status === 'live' || downstreamMatch.status === 'finished')) {
+    throw Object.assign(new Error('ลบหรือเปลี่ยนผลรอบก่อนหน้าไม่ได้ เพราะรอบถัดไปเริ่มแข่งแล้ว'), { statusCode: 409 });
+  }
+
+  const slot = quarterFinalNumber % 2 === 1 ? 'homeTeamId' : 'awayTeamId';
+  await transaction.match.update({
+    where: { id: semiFinal.id },
+    data: { [slot]: null, homeScore: null, awayScore: null, quarterScores: null, status: 'upcoming' },
+  });
+  if (!semiFinalHasStarted) return;
+
+  const finalMatch = await transaction.match.findFirst({
+    where: { category: match.category, round: { contains: 'ชิงชนะเลิศ' }, NOT: { round: { contains: 'รอง' } } },
+  });
+  const thirdPlace = await transaction.match.findFirst({
+    where: { category: match.category, round: { contains: 'อันดับ 3' } },
+  });
+  const nextSlot = semiFinalNumber === 1 ? 'homeTeamId' : 'awayTeamId';
+  const resetData = { [nextSlot]: null, homeScore: null, awayScore: null, quarterScores: null, status: 'upcoming' };
+  if (finalMatch) await transaction.match.update({ where: { id: finalMatch.id }, data: resetData });
+  if (thirdPlace) await transaction.match.update({ where: { id: thirdPlace.id }, data: resetData });
+}
+
 
 // POST /api/tournament/seed-24
 // Quickly seeds the exact 24-team, 2-division, 3-group, 2-court format specified by user
 async function seedTournament24(req, res, next) {
   try {
+    const existingTeams = await prisma.team.count();
+    const existingMatches = await prisma.match.count();
+    if (existingTeams > 0 || existingMatches > 0) {
+      return res.status(409).json({ message: 'มีข้อมูลทีมอยู่แล้ว ระบบไม่สร้างทับเพื่อป้องกันข้อมูลเดิม กรุณาจัดการฐานข้อมูลก่อน' });
+    }
     // 24 teams structure
     const divisions = [
       {
@@ -673,10 +730,12 @@ async function seedTournament24(req, res, next) {
 // Deletes all knockout matches (QF, SF, Final, 3rd) for a category
 async function resetKnockoutMatches(req, res, next) {
   try {
-    const { category = 'รุ่น A' } = req.body;
+    const { category = 'รุ่น A' } = req.body || {};
+    if (!['รุ่น A', 'รุ่น B'].includes(category)) {
+      return res.status(400).json({ message: 'รุ่นการแข่งขันไม่ถูกต้อง' });
+    }
 
-    const deleted = await prisma.match.deleteMany({
-      where: {
+    const where = {
         category,
         OR: [
           { round: { contains: 'รอบ 8 ทีม' } },
@@ -686,8 +745,12 @@ async function resetKnockoutMatches(req, res, next) {
           { round: { contains: 'QF' } },
           { round: { contains: 'SF' } },
         ],
-      },
-    });
+      };
+    const knockoutMatches = await prisma.match.findMany({ where, select: { id: true, status: true } });
+    if (knockoutMatches.some((match) => match.status === 'finished' || match.status === 'live')) {
+      return res.status(409).json({ message: 'รีเซ็ตรอบน็อกเอาต์ไม่ได้ขณะแมตช์กำลังแข่งหรือมีผลจบแล้ว' });
+    }
+    const deleted = await prisma.match.deleteMany({ where });
 
     return res.json({
       message: `รีเซ็ตรอบน็อกเอาต์ของ ${category} สำเร็จ (ลบ ${deleted.count} แมตช์)`,
@@ -702,7 +765,10 @@ async function resetKnockoutMatches(req, res, next) {
 // Admin manually assigns teams into QF slots (override TBD)
 async function manualSeedKnockout(req, res, next) {
   try {
-    const { category = 'รุ่น A', seeds } = req.body;
+    const { category = 'รุ่น A', seeds } = req.body || {};
+    if (!['รุ่น A', 'รุ่น B'].includes(category)) {
+      return res.status(400).json({ message: 'รุ่นการแข่งขันไม่ถูกต้อง' });
+    }
     // seeds: array of { matchId, homeTeamId?, awayTeamId? }
     if (!seeds || !Array.isArray(seeds) || seeds.length === 0) {
       return res.status(400).json({ message: 'กรุณาระบุ seeds (array of { matchId, homeTeamId?, awayTeamId? })' });
@@ -710,14 +776,27 @@ async function manualSeedKnockout(req, res, next) {
 
     const results = [];
     for (const s of seeds) {
+      if (!s || typeof s !== 'object') return res.status(400).json({ message: 'ข้อมูล seed ไม่ถูกต้อง' });
       const { matchId, homeTeamId, awayTeamId } = s;
       if (!matchId) continue;
+
+      const match = await prisma.match.findUnique({ where: { id: Number(matchId) } });
+      if (!match || match.category !== category || !match.round?.includes('รอบ 8 ทีม')) {
+        return res.status(400).json({ message: 'เลือกแมตช์รอบ 8 ทีมในรุ่นที่ระบุเท่านั้น' });
+      }
 
       const data = {};
       if (homeTeamId !== undefined && homeTeamId !== null) data.homeTeamId = Number(homeTeamId);
       if (awayTeamId !== undefined && awayTeamId !== null) data.awayTeamId = Number(awayTeamId);
 
       if (Object.keys(data).length === 0) continue;
+
+      const teamIds = [data.homeTeamId, data.awayTeamId].filter((id) => id !== undefined);
+      if (new Set(teamIds).size !== teamIds.length) return res.status(400).json({ message: 'ทีมเจ้าบ้านและทีมเยือนต้องไม่ซ้ำกัน' });
+      const teams = await prisma.team.findMany({ where: { id: { in: teamIds } }, select: { id: true, category: true } });
+      if (teams.length !== teamIds.length || teams.some((team) => team.category !== category)) {
+        return res.status(400).json({ message: 'เลือกทีมที่มีอยู่และอยู่ในรุ่นที่ถูกต้อง' });
+      }
 
       const updated = await prisma.match.update({
         where: { id: Number(matchId) },
@@ -742,8 +821,8 @@ module.exports = {
   generateKnockoutMatches,
   advanceKnockoutWinner,
   advanceWinnerInternal,
+  clearDownstreamKnockoutSlots,
   resetKnockoutMatches,
   manualSeedKnockout,
   seedTournament24,
 };
-

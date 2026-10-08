@@ -1,29 +1,34 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getTeamById } from '../services/api';
 import MatchCard from '../components/MatchCard';
+import ApiErrorNotice from '../components/ApiErrorNotice';
+import useLiveUpdates from '../hooks/useLiveUpdates';
 import { Shield, MapPin, User, ArrowLeft, Calendar, Award, Trophy, Info } from 'lucide-react';
 
 export default function TeamDetail() {
   const { id } = useParams();
   const [team, setTeam] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    const fetchTeam = async () => {
-      try {
-        setLoading(true);
-        const res = await getTeamById(id);
-        setTeam(res.data);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTeam();
+  const fetchTeam = useCallback(async ({ showLoading = true } = {}) => {
+    if (showLoading) setLoading(true);
+    try {
+      const res = await getTeamById(id);
+      setTeam(res.data);
+      setLoadError(false);
+    } catch (err) {
+      console.error(err);
+      setLoadError(err.response?.status !== 404);
+      if (err.response?.status === 404) setTeam(null);
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => { fetchTeam(); }, [fetchTeam]);
+  useLiveUpdates(() => fetchTeam({ showLoading: false }));
 
   if (loading) {
     return (
@@ -37,7 +42,7 @@ export default function TeamDetail() {
   if (!team) {
     return (
       <div className="py-20 text-center">
-        <h2 className="text-xl font-bold text-slate-800">ไม่พบข้อมูลทีมนี้</h2>
+        {loadError ? <ApiErrorNotice onRetry={() => fetchTeam()} /> : <h2 className="text-xl font-bold text-slate-800">ไม่พบข้อมูลทีมนี้</h2>}
         <Link to="/teams" className="mt-4 inline-flex items-center gap-2 text-primary-600 font-semibold text-sm">
           <ArrowLeft className="w-4 h-4" />
           <span>กลับไปหน้ารวมทีม</span>

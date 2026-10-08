@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { getMatches, getTeams, getTournamentBracket } from '../services/api';
 import MatchCard from '../components/MatchCard';
 import FibaBracket from '../components/FibaBracket';
+import ApiErrorNotice from '../components/ApiErrorNotice';
+import useLiveUpdates from '../hooks/useLiveUpdates';
 import { Calendar, Filter, Search, RotateCcw, Trophy, LayoutList, GitFork } from 'lucide-react';
 
 export default function Schedule() {
@@ -9,6 +11,7 @@ export default function Schedule() {
   const [teams, setTeams] = useState([]);
   const [bracketData, setBracketData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   // Active Division for FIBA Bracket & Filter: 'รุ่น A' | 'รุ่น B'
   const [activeCategory, setActiveCategory] = useState('รุ่น A');
@@ -35,12 +38,20 @@ export default function Schedule() {
     fetchMatches();
   }, [activeCategory, statusFilter, groupFilter, venueFilter, teamFilter]);
 
+  useLiveUpdates(() => Promise.all([
+    fetchMatches({ showLoading: false }),
+    fetchBracketData(activeCategory),
+    fetchTeams(),
+  ]));
+
   const fetchBracketData = async (cat = activeCategory) => {
     try {
       const res = await getTournamentBracket(cat);
       setBracketData(res.data);
+      setLoadError(false);
     } catch (err) {
       console.error('Error fetching bracket:', err);
+      setLoadError(true);
     }
   };
 
@@ -48,14 +59,16 @@ export default function Schedule() {
     try {
       const res = await getTeams({ category: activeCategory });
       setTeams(res.data);
+      setLoadError(false);
     } catch (err) {
       console.error(err);
+      setLoadError(true);
     }
   };
 
-  const fetchMatches = async () => {
+  const fetchMatches = async ({ showLoading = true } = {}) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const params = {};
       if (activeCategory && activeCategory !== 'all') params.category = activeCategory;
       if (statusFilter && statusFilter !== 'all') params.status = statusFilter;
@@ -65,8 +78,10 @@ export default function Schedule() {
 
       const res = await getMatches(params);
       setMatches(res.data);
+      setLoadError(false);
     } catch (err) {
       console.error(err);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -134,6 +149,10 @@ export default function Schedule() {
           </button>
         </div>
       </div>
+
+      {loadError && <ApiErrorNotice onRetry={() => Promise.all([
+        fetchMatches(), fetchBracketData(activeCategory), fetchTeams(),
+      ])} />}
 
       {/* Conditionally Render Bracket View or List View */}
       {viewMode === 'bracket' ? (
@@ -265,7 +284,7 @@ export default function Schedule() {
             <div key={i} className="h-52 bg-white rounded-2xl border border-slate-100 animate-pulse" />
           ))}
         </div>
-      ) : filteredMatches.length > 0 ? (
+      ) : loadError ? null : filteredMatches.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {filteredMatches.map((match) => (
             <MatchCard key={match.id} match={match} />

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getTeams } from '../services/api';
 import TeamCard from '../components/TeamCard';
+import ApiErrorNotice from '../components/ApiErrorNotice';
+import useLiveUpdates from '../hooks/useLiveUpdates';
 import { useAuth } from '../context/AuthContext';
 import { Users, Search, Plus, Shield } from 'lucide-react';
 
@@ -11,22 +13,27 @@ export default function Teams() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [groupFilter, setGroupFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [loadError, setLoadError] = useState(false);
   const { isAuthenticated } = useAuth();
 
   useEffect(() => {
     fetchTeams();
   }, [categoryFilter, groupFilter]);
 
-  const fetchTeams = async () => {
+  useLiveUpdates(() => fetchTeams({ showLoading: false }));
+
+  const fetchTeams = async ({ showLoading = true } = {}) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const params = {};
       if (categoryFilter !== 'all') params.category = categoryFilter;
       if (groupFilter !== 'all') params.group = groupFilter;
       const res = await getTeams(params);
       setTeams(res.data);
+      setLoadError(false);
     } catch (err) {
       console.error(err);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -116,6 +123,8 @@ export default function Teams() {
         </div>
       </div>
 
+      {loadError && <ApiErrorNotice onRetry={() => fetchTeams()} />}
+
       {/* Search Bar */}
       <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm max-w-md">
         <div className="relative">
@@ -137,7 +146,7 @@ export default function Teams() {
             <div key={i} className="h-64 bg-white rounded-2xl border border-slate-100 animate-pulse" />
           ))}
         </div>
-      ) : filteredTeams.length > 0 ? (
+      ) : loadError ? null : filteredTeams.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {filteredTeams.map((team) => (
             <TeamCard key={team.id} team={team} />

@@ -1,9 +1,17 @@
 function errorHandler(err, req, res, next) {
-  console.error('Error encountered:', err);
-  const statusCode = res.statusCode && res.statusCode !== 200 ? res.statusCode : 500;
+  if (res.headersSent) return next(err);
+
+  console.error('Request failed:', {
+    method: req.method,
+    path: req.path,
+    message: err.message,
+  });
+
+  const statusCode = Number.isInteger(err.statusCode) && err.statusCode >= 400 && err.statusCode < 600
+    ? err.statusCode
+    : 500;
   res.status(statusCode).json({
-    message: err.message || 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์',
-    stack: process.env.NODE_ENV === 'production' ? null : err.stack,
+    message: statusCode === 500 ? 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์ กรุณาลองใหม่อีกครั้ง' : err.message,
   });
 }
 

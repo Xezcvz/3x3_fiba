@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getMatchById } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
+import ApiErrorNotice from '../components/ApiErrorNotice';
+import useLiveUpdates from '../hooks/useLiveUpdates';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Calendar, MapPin, Trophy, Shield, Edit3, Clock } from 'lucide-react';
 
@@ -9,23 +11,26 @@ export default function MatchDetail() {
   const { id } = useParams();
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const { isAuthenticated } = useAuth();
 
-  useEffect(() => {
-    const fetchMatch = async () => {
-      try {
-        setLoading(true);
-        const res = await getMatchById(id);
-        setMatch(res.data);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMatch();
+  const fetchMatch = useCallback(async ({ showLoading = true } = {}) => {
+    if (showLoading) setLoading(true);
+    try {
+      const res = await getMatchById(id);
+      setMatch(res.data);
+      setLoadError(false);
+    } catch (err) {
+      console.error(err);
+      setLoadError(err.response?.status !== 404);
+      if (err.response?.status === 404) setMatch(null);
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => { fetchMatch(); }, [fetchMatch]);
+  useLiveUpdates(() => fetchMatch({ showLoading: false }));
 
   if (loading) {
     return (
@@ -39,7 +44,7 @@ export default function MatchDetail() {
   if (!match) {
     return (
       <div className="py-20 text-center">
-        <h2 className="text-xl font-bold text-slate-800">ไม่พบข้อมูลแมตช์นี้</h2>
+        {loadError ? <ApiErrorNotice onRetry={() => fetchMatch()} /> : <h2 className="text-xl font-bold text-slate-800">ไม่พบข้อมูลแมตช์นี้</h2>}
         <Link to="/schedule" className="mt-4 inline-flex items-center gap-2 text-primary-600 font-semibold text-sm">
           <ArrowLeft className="w-4 h-4" />
           <span>กลับไปหน้าตารางแข่งขัน</span>
@@ -62,12 +67,9 @@ export default function MatchDetail() {
 
   const isFinished = match.status === 'finished';
   const isLive = match.status === 'live';
-  const quarters = match.quarterScoresObj || {
-    q1Home: '-', q1Away: '-',
-    q2Home: '-', q2Away: '-',
-    q3Home: '-', q3Away: '-',
-    q4Home: '-', q4Away: '-',
-  };
+  const scoreDetails = match.quarterScoresObj || {};
+  const has3x3Details = ['onePtHome', 'onePtAway', 'twoPtHome', 'twoPtAway', 'foulsHome', 'foulsAway']
+    .some((key) => scoreDetails[key] !== undefined && scoreDetails[key] !== null);
 
   const homeWin = isFinished && match.homeScore > match.awayScore;
   const awayWin = isFinished && match.awayScore > match.homeScore;
@@ -132,10 +134,10 @@ export default function MatchDetail() {
                 )}
               </div>
               <Link
-                to={`/teams/${match.homeTeam?.id}`}
+                to={match.homeTeam ? `/teams/${match.homeTeam.id}` : '/schedule'}
                 className="font-extrabold text-lg sm:text-xl text-slate-800 hover:text-primary-600 transition-colors"
               >
-                {match.homeTeam?.name || 'ทีมเจ้าบ้าน'}
+                {match.homeTeam?.name || 'TBD · รอทีมชนะรอบก่อนหน้า'}
               </Link>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
                 เจ้าบ้าน (Home)
@@ -193,10 +195,10 @@ export default function MatchDetail() {
                 )}
               </div>
               <Link
-                to={`/teams/${match.awayTeam?.id}`}
+                to={match.awayTeam ? `/teams/${match.awayTeam.id}` : '/schedule'}
                 className="font-extrabold text-lg sm:text-xl text-slate-800 hover:text-primary-600 transition-colors"
               >
-                {match.awayTeam?.name || 'ทีมเยือน'}
+                {match.awayTeam?.name || 'TBD · รอทีมชนะรอบก่อนหน้า'}
               </Link>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
                 ทีมเยือน (Away)
@@ -267,6 +269,29 @@ export default function MatchDetail() {
         </div>
       )}
 
+      {has3x3Details && (
+        <section className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm sm:p-8" aria-labelledby="score-breakdown-title">
+          <h3 id="score-breakdown-title" className="mb-4 flex items-center gap-2 text-base font-bold text-slate-800">
+            <Trophy className="h-5 w-5 text-primary-600" aria-hidden="true" />
+            สถิติการทำคะแนน 3×3
+          </h3>
+          <div className="grid grid-cols-3 gap-2 text-center text-xs sm:gap-4 sm:text-sm">
+            <span className="font-semibold text-slate-500">รายการ</span>
+            <span className="font-semibold text-slate-700">{match.homeTeam?.name}</span>
+            <span className="font-semibold text-slate-700">{match.awayTeam?.name}</span>
+            <span className="text-slate-500">ยิง 1 แต้ม</span>
+            <span>{scoreDetails.onePtHome ?? '—'}</span>
+            <span>{scoreDetails.onePtAway ?? '—'}</span>
+            <span className="text-slate-500">ยิง 2 แต้ม</span>
+            <span>{scoreDetails.twoPtHome ?? '—'}</span>
+            <span>{scoreDetails.twoPtAway ?? '—'}</span>
+            <span className="text-slate-500">ฟาวล์ทีม</span>
+            <span>{scoreDetails.foulsHome ?? '—'}</span>
+            <span>{scoreDetails.foulsAway ?? '—'}</span>
+          </div>
+        </section>
+      )}
+
       {/* Match Details & Venue Info */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-3">
@@ -291,7 +316,7 @@ export default function MatchDetail() {
             <div className="space-y-1.5">
               <p className="font-semibold text-slate-800 text-sm">FIBA 3×3 Official Rules</p>
               <ul className="text-xs text-slate-500 space-y-1 list-none">
-                <li>• <strong>เวลา / แต้มชนะ</strong>: 1 ควอเตอร์ 10 นาที หรือทีมแรกที่ทำได้ <strong>21 แต้มชนะทันที</strong></li>
+                <li>• <strong>เวลา / แต้มชนะ</strong>: 1 ช่วงเวลา 10 นาที หรือทีมแรกที่ทำได้ <strong>21 แต้มชนะทันที</strong></li>
                 <li>• <strong>Overtime (ต่อเวลา)</strong>: ไม่มีจับเวลา ทีมแรกที่ทำได้เพิ่ม <strong>2 แต้ม</strong> ชนะเกม</li>
                 <li>• <strong>ระบบแต้ม</strong>: ในเส้นโค้ง 1 แต้ม · นอกเส้นโค้ง (Arc) 2 แต้ม · ลูกโทษ 1 แต้ม</li>
                 <li>• <strong>Shot Clock</strong>: <strong>12 วินาที</strong> · ผู้เล่นในสนามทีมละ 3 คน (สำรอง 1 คน)</li>

@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { getStats, getMatches } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../../components/StatusBadge';
+import ApiErrorNotice from '../../components/ApiErrorNotice';
+import useLiveUpdates from '../../hooks/useLiveUpdates';
 import {
   Shield,
   Users,
@@ -22,29 +24,32 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [recentMatches, setRecentMatches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async ({ showLoading = true } = {}) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const [statsRes, matchesRes] = await Promise.all([
         getStats(),
         getMatches({ limit: 5 }),
       ]);
       setStats(statsRes.data);
       setRecentMatches(matchesRes.data);
+      setLoadError(false);
     } catch (err) {
       console.error(err);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => { fetchDashboardData(); }, []);
+  useLiveUpdates(() => fetchDashboardData({ showLoading: false }));
+
   return (
     <div className="space-y-8 pb-16">
+      {loadError && <ApiErrorNotice onRetry={() => fetchDashboardData()} />}
       
       {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-primary-700 to-primary-600 rounded-3xl p-6 sm:p-8 text-white shadow-lg shadow-primary-500/15 flex flex-col md:flex-row md:items-center justify-between gap-6">

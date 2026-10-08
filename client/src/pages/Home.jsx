@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getMatches, getNews, getTeams, getStats } from '../services/api';
 import MatchCard from '../components/MatchCard';
 import NewsCard from '../components/NewsCard';
 import StatusBadge from '../components/StatusBadge';
+import ApiErrorNotice from '../components/ApiErrorNotice';
+import useLiveUpdates from '../hooks/useLiveUpdates';
 import {
   Trophy,
   Flame,
@@ -24,35 +26,42 @@ export default function Home() {
   const [teams, setTeams] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [liveRes, upcomingRes, resultsRes, newsRes, teamsRes, statsRes] = await Promise.all([
-          getMatches({ status: 'live' }),
-          getMatches({ status: 'upcoming', limit: 4 }),
-          getMatches({ status: 'finished', limit: 4 }),
-          getNews({ limit: 3 }),
-          getTeams(),
-          getStats(),
-        ]);
+  const fetchData = useCallback(async ({ showLoading = true } = {}) => {
+    if (showLoading) setLoading(true);
+    try {
+      const [liveRes, upcomingRes, resultsRes, newsRes, teamsRes, statsRes] = await Promise.all([
+        getMatches({ status: 'live' }),
+        getMatches({ status: 'upcoming', limit: 4 }),
+        getMatches({ status: 'finished', limit: 4 }),
+        getNews({ limit: 3 }),
+        getTeams(),
+        getStats(),
+      ]);
 
-        setLiveMatches(liveRes.data);
-        setUpcomingMatches(upcomingRes.data);
-        setRecentResults(resultsRes.data);
-        setNewsList(newsRes.data);
-        setTeams(teamsRes.data);
-        setStats(statsRes.data);
-      } catch (err) {
-        console.error('Error fetching home data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+      setLiveMatches(liveRes.data);
+      setUpcomingMatches(upcomingRes.data);
+      setRecentResults(resultsRes.data);
+      setNewsList(newsRes.data);
+      setTeams(teamsRes.data);
+      setStats(statsRes.data);
+      setLoadError(false);
+    } catch (err) {
+      console.error('Error fetching home data:', err);
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+  useLiveUpdates(() => fetchData({ showLoading: false }));
+
+  const getGroupTeams = (group) => teams
+    .filter((team) => team.category === 'รุ่น A' && team.group === group)
+    .sort((a, b) => (b.stats?.pts || 0) - (a.stats?.pts || 0) || (b.stats?.diff || 0) - (a.stats?.diff || 0))
+    .slice(0, 4);
 
   return (
     <div className="space-y-12 pb-16">
@@ -161,6 +170,8 @@ export default function Home() {
         </div>
       </section>
 
+      {loadError && <ApiErrorNotice onRetry={() => fetchData()} />}
+
       {/* 2. Live Matches Spotlight (If any match is live) */}
       {liveMatches.length > 0 && (
         <section className="space-y-4">
@@ -219,7 +230,7 @@ export default function Home() {
               <div key={i} className="h-48 bg-white rounded-2xl border border-slate-100 animate-pulse" />
             ))}
           </div>
-        ) : upcomingMatches.length > 0 ? (
+        ) : loadError ? null : upcomingMatches.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-5">
             {upcomingMatches.map((match) => (
               <MatchCard key={match.id} match={match} />
@@ -248,11 +259,13 @@ export default function Home() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {recentResults.slice(0, 4).map((match) => (
-              <MatchCard key={match.id} match={match} />
-            ))}
-          </div>
+          {loadError ? null : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              {recentResults.slice(0, 4).map((match) => (
+                <MatchCard key={match.id} match={match} />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Quick Standings Snippet (1 span) */}
@@ -268,53 +281,37 @@ export default function Home() {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-4">
-            <div>
-              <div className="text-xs font-bold text-primary-700 uppercase tracking-wider mb-2 flex items-center justify-between">
-                <span>สาย A (Group A)</span>
-                <span className="text-[10px] text-slate-400">ช/พ/แต้ม</span>
-              </div>
-              <div className="space-y-1.5">
-                {teams.filter(t => t.group === 'A').slice(0, 4).map((t, idx) => (
-                  <div key={t.id} className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg hover:bg-slate-50">
-                    <div className="flex items-center gap-2 truncate">
-                      <span className="w-4 font-bold text-slate-400 text-center">{idx + 1}</span>
-                      <span className="font-semibold text-slate-700 truncate">{t.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2 font-mono font-bold text-slate-600 flex-shrink-0">
-                      <span className="text-emerald-600">{t.stats?.won ?? 0}</span>
-                      <span className="text-slate-300">/</span>
-                      <span className="text-rose-500">{t.stats?.lost ?? 0}</span>
-                      <span className="text-slate-300">/</span>
-                      <span className="text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">{t.stats?.pts ?? 0}</span>
-                    </div>
+            <p className="text-xs font-bold text-slate-500">รุ่น A · ชนะ / แพ้ / คะแนนจัดอันดับ</p>
+            {['A', 'B', 'C'].map((group) => {
+              const groupTeams = getGroupTeams(group);
+              return (
+                <div key={group} className="border-t border-slate-100 pt-3 first:border-0 first:pt-0">
+                  <div className="text-xs font-bold text-primary-700 uppercase tracking-wider mb-2 flex items-center justify-between">
+                    <span>กลุ่ม {group}</span>
+                    <span className="text-[10px] text-slate-400">ช / พ / แต้ม</span>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="border-t border-slate-100 pt-3">
-              <div className="text-xs font-bold text-primary-700 uppercase tracking-wider mb-2 flex items-center justify-between">
-                <span>สาย B (Group B)</span>
-                <span className="text-[10px] text-slate-400">ช/พ/แต้ม</span>
-              </div>
-              <div className="space-y-1.5">
-                {teams.filter(t => t.group === 'B').slice(0, 4).map((t, idx) => (
-                  <div key={t.id} className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg hover:bg-slate-50">
-                    <div className="flex items-center gap-2 truncate">
-                      <span className="w-4 font-bold text-slate-400 text-center">{idx + 1}</span>
-                      <span className="font-semibold text-slate-700 truncate">{t.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2 font-mono font-bold text-slate-600 flex-shrink-0">
-                      <span className="text-emerald-600">{t.stats?.won ?? 0}</span>
-                      <span className="text-slate-300">/</span>
-                      <span className="text-rose-500">{t.stats?.lost ?? 0}</span>
-                      <span className="text-slate-300">/</span>
-                      <span className="text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">{t.stats?.pts ?? 0}</span>
-                    </div>
+                  <div className="space-y-1.5">
+                    {groupTeams.length === 0 ? (
+                      <p className="px-2 py-1.5 text-xs text-slate-400">ยังไม่มีทีมในกลุ่มนี้</p>
+                    ) : groupTeams.map((team, index) => (
+                      <div key={team.id} className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg hover:bg-slate-50">
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="w-4 font-bold text-slate-400 text-center">{index + 1}</span>
+                          <span className="font-semibold text-slate-700 truncate">{team.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 font-mono font-bold text-slate-600 flex-shrink-0">
+                          <span className="text-emerald-600">{team.stats?.won ?? 0}</span>
+                          <span className="text-slate-300">/</span>
+                          <span className="text-rose-500">{team.stats?.lost ?? 0}</span>
+                          <span className="text-slate-300">/</span>
+                          <span className="text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">{team.stats?.pts ?? 0}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+              );
+            })}
 
             <Link
               to="/teams"

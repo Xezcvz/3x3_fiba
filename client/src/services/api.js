@@ -7,22 +7,11 @@ const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 const api = axios.create({
   baseURL: BASE_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 });
-
-// Attach JWT token from localStorage if available
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
 
 // Response interceptor to handle unauthorized
 api.interceptors.response.use(
@@ -31,8 +20,6 @@ api.interceptors.response.use(
     if (error.response && error.response.status === 401) {
       // Clear token if invalid or expired
       if (window.location.pathname.startsWith('/admin') && window.location.pathname !== '/admin/login') {
-        localStorage.removeItem('token');
-        localStorage.removeItem('admin');
         window.location.href = '/admin/login';
       }
     }
@@ -46,13 +33,13 @@ export const getTeamById = (id) => api.get(`/teams/${id}`);
 export const createTeam = (data) => api.post('/teams', data);
 export const updateTeam = (id, data) => api.put(`/teams/${id}`, data);
 export const deleteTeam = (id) => api.delete(`/teams/${id}`);
-export const resetAllTeams = (category) => api.post('/teams/reset-all', { category });
+export const resetAllTeams = (category = 'all') => api.post('/teams/reset-all', { category });
 
 // Draw API
 export const getGroups = () => api.get('/teams/groups');
 export const autoDraw = (data) => api.post('/teams/draw/auto', data);
-export const manualDraw = (assignments) => api.post('/teams/draw/manual', { assignments });
-export const resetDraw = () => api.post('/teams/draw/reset');
+export const manualDraw = (assignments, category = 'all') => api.post('/teams/draw/manual', { assignments, category });
+export const resetDraw = (category = 'all') => api.post('/teams/draw/reset', { category });
 
 // Matches API
 export const getMatches = (params) => api.get('/matches', { params });
@@ -72,6 +59,7 @@ export const deleteNews = (id) => api.delete(`/news/${id}`);
 
 // Auth & Stats API
 export const login = (credentials) => api.post('/auth/login', credentials);
+export const logout = () => api.post('/auth/logout');
 export const getMe = () => api.get('/auth/me');
 export const getStats = () => api.get('/stats');
 

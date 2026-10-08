@@ -157,6 +157,12 @@ export default function FibaBracket({
 
   // ── Reset Knockout ──────────────────────────────────────────────────────
   const handleReset = async () => {
+    const hasCompletedKnockout = [...(bracketData?.bracket?.qf || []), ...(bracketData?.bracket?.sf || []), ...(bracketData?.bracket?.final || []), ...(bracketData?.bracket?.thirdPlace || [])]
+      .some((match) => match.status === 'finished' || match.status === 'live');
+    if (hasCompletedKnockout) {
+      await alert({ title: 'ล้างรอบน็อกเอาต์ไม่ได้', message: 'มีแมตช์ที่กำลังแข่งหรือจบแล้ว กรุณาจัดการประวัติผลแข่งก่อน', type: 'danger' });
+      return;
+    }
     const ok = await confirm({
       title: `⚠️ รีเซ็ตรอบน็อกเอาต์ทั้งหมดของ ${activeCategory}?`,
       message: `จะลบแมตช์ QF, SF, ชิงชนะเลิศ และชิงอันดับ 3 ทั้งหมด\nการกระทำนี้ไม่สามารถย้อนกลับได้!`,
@@ -1039,10 +1045,10 @@ function MatchBracketNode({
               </div>
             )}
             <Link
-              to={`/teams/${match.homeTeam?.id}`}
+              to={match.homeTeam ? `/teams/${match.homeTeam.id}` : '/schedule'}
               className="truncate font-semibold text-slate-800 hover:text-primary-600"
             >
-              {match.homeTeam?.name || 'ทีมเหย้า'}
+              {match.homeTeam?.name || 'TBD · รอผู้ชนะรอบก่อนหน้า'}
             </Link>
           </div>
 
@@ -1083,10 +1089,10 @@ function MatchBracketNode({
               </div>
             )}
             <Link
-              to={`/teams/${match.awayTeam?.id}`}
+              to={match.awayTeam ? `/teams/${match.awayTeam.id}` : '/schedule'}
               className="truncate font-semibold text-slate-800 hover:text-primary-600"
             >
-              {match.awayTeam?.name || 'ทีมเยือน'}
+              {match.awayTeam?.name || 'TBD · รอผู้ชนะรอบก่อนหน้า'}
             </Link>
           </div>
 

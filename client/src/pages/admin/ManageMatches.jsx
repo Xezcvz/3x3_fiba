@@ -35,6 +35,7 @@ export default function ManageMatches() {
   const [matches, setMatches] = useState([]);
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [searchParams] = useSearchParams();
 
   // Reset Menu State
@@ -61,6 +62,7 @@ export default function ManageMatches() {
   // Table Filters
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [venueFilter, setVenueFilter] = useState('all');
+  const eligibleTeams = teams.filter((team) => team.category === category);
 
   // 3x3 Match Stats
   const [onePtHome, setOnePtHome] = useState('');
@@ -87,6 +89,7 @@ export default function ManageMatches() {
       ]);
       setMatches(matchesRes.data);
       setTeams(teamsRes.data);
+      setLoadError('');
 
       // Check if `?edit=id` is in query string
       const editId = searchParams.get('edit');
@@ -98,6 +101,7 @@ export default function ManageMatches() {
       }
     } catch (err) {
       console.error(err);
+      setLoadError(err.response?.data?.message || 'โหลดข้อมูลการแข่งขันไม่สำเร็จ กรุณาลองใหม่');
     } finally {
       setLoading(false);
     }
@@ -106,13 +110,15 @@ export default function ManageMatches() {
   const openCreateModal = () => {
     setIsEditing(false);
     setCurrentMatchId(null);
-    setHomeTeamId(teams[0]?.id || '');
-    setAwayTeamId(teams[1]?.id || '');
+    const eligible = teams.filter((team) => team.category === 'รุ่น A');
+    setHomeTeamId(eligible[0]?.id || '');
+    setAwayTeamId(eligible[1]?.id || '');
     // Default to tomorrow 18:00 in ISO format local
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(18, 0, 0, 0);
-    setMatchDate(tomorrow.toISOString().slice(0, 16));
+    const localDateTime = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60_000);
+    setMatchDate(localDateTime.toISOString().slice(0, 16));
     setCategory('รุ่น A');
     setVenue('สนาม 1');
     setStatus('upcoming');
@@ -147,8 +153,8 @@ export default function ManageMatches() {
     setAwayScore(match.awayScore !== null ? match.awayScore : '');
 
     const q = match.quarterScoresObj || {};
-    setOnePtHome(q.onePtHome ?? q.q1Home ?? ''); setOnePtAway(q.onePtAway ?? q.q1Away ?? '');
-    setTwoPtHome(q.twoPtHome ?? q.q2Home ?? ''); setTwoPtAway(q.twoPtAway ?? q.q2Away ?? '');
+    setOnePtHome(q.onePtHome ?? ''); setOnePtAway(q.onePtAway ?? '');
+    setTwoPtHome(q.twoPtHome ?? ''); setTwoPtAway(q.twoPtAway ?? '');
     setFoulsHome(q.foulsHome ?? ''); setFoulsAway(q.foulsAway ?? '');
     setWinReason(q.winReason || '21pts');
 
@@ -173,6 +179,17 @@ export default function ManageMatches() {
       return;
     }
 
+    const selectedHomeTeam = teams.find((team) => team.id === Number(homeTeamId));
+    const selectedAwayTeam = teams.find((team) => team.id === Number(awayTeamId));
+    if (round.includes('รอบแบ่งกลุ่ม') && selectedHomeTeam?.group !== selectedAwayTeam?.group) {
+      setFormError('แมตช์รอบแบ่งกลุ่มต้องเลือกทีมจากกลุ่มเดียวกัน');
+      return;
+    }
+    if (status === 'upcoming' && (onePtHome !== '' || onePtAway !== '' || twoPtHome !== '' || twoPtAway !== '')) {
+      setFormError('แมตช์ที่ยังไม่เริ่มต้องไม่มีข้อมูลคะแนน');
+      return;
+    }
+
     setSaving(true);
     const statsData = {
       onePtHome: onePtHome !== '' ? Number(onePtHome) : null,
@@ -188,7 +205,7 @@ export default function ManageMatches() {
       homeTeamId: parseInt(homeTeamId, 10),
       awayTeamId: parseInt(awayTeamId, 10),
       category,
-      matchDate: new Date(matchDate).toISOString(),
+      matchDate,
       venue,
       status,
       round,
@@ -367,7 +384,7 @@ export default function ManageMatches() {
             จัดการตารางแข่งขันและอัปเดตผลคะแนน
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            เพิ่มตารางแข่งขันใหม่ ปรับสถานะแมตช์สด (LIVE) และบันทึกคะแนนควอเตอร์
+            เพิ่มตารางแข่งขันใหม่ ปรับสถานะแมตช์สด (LIVE) และบันทึกสถิติการยิงแบบ 3×3
           </p>
         </div>
 
@@ -499,6 +516,12 @@ export default function ManageMatches() {
       </div>
 
       {/* Matches Table Card */}
+      {loadError && (
+        <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex items-center justify-between gap-3 text-sm text-rose-800">
+          <span>{loadError}</span>
+          <button type="button" onClick={() => fetchInitialData()} className="font-bold underline">ลองอีกครั้ง</button>
+        </div>
+      )}
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs sm:text-sm">
@@ -515,7 +538,8 @@ export default function ManageMatches() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
-              {matches
+              {loading && <tr><td colSpan="8" className="py-12 text-center text-slate-400">กำลังโหลดแมตช์…</td></tr>}
+              {!loading && !loadError && matches
                 .filter((m) => categoryFilter === 'all' || m.category === categoryFilter)
                 .filter((m) => venueFilter === 'all' || (m.venue && m.venue.includes(venueFilter)))
                 .map((m) => (
@@ -536,13 +560,13 @@ export default function ManageMatches() {
                     </span>
                   </td>
                   <td className="py-3.5 px-4 font-bold text-slate-800">
-                    {m.homeTeam?.name}
+                    {m.homeTeam?.name || 'TBD · ทีมเจ้าบ้าน'}
                   </td>
                   <td className="py-3.5 px-4 text-center font-mono font-black text-slate-700 text-base">
                     {m.homeScore !== null ? `${m.homeScore} - ${m.awayScore}` : 'VS'}
                   </td>
                   <td className="py-3.5 px-4 font-bold text-slate-800">
-                    {m.awayTeam?.name}
+                    {m.awayTeam?.name || 'TBD · ทีมเยือน'}
                   </td>
                   <td className="py-3.5 px-4 text-slate-500 text-xs truncate max-w-[150px]">
                     {m.venue}
@@ -602,7 +626,12 @@ export default function ManageMatches() {
                     <button
                       type="button"
                       key={cat}
-                      onClick={() => setCategory(cat)}
+                      onClick={() => {
+                        setCategory(cat);
+                        const nextTeams = teams.filter((team) => team.category === cat);
+                        setHomeTeamId(nextTeams[0]?.id || '');
+                        setAwayTeamId(nextTeams[1]?.id || '');
+                      }}
                       className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
                         category === cat
                           ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
@@ -628,8 +657,7 @@ export default function ManageMatches() {
                     className="w-full px-3.5 py-2.5 rounded-xl text-sm bg-slate-50 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 font-semibold"
                   >
                     <option value="">เลือกทีมเจ้าบ้าน</option>
-                    {teams
-                      .filter((t) => !category || t.category === category)
+                    {eligibleTeams
                       .map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.name} ({t.category} กลุ่ม {t.group})
@@ -649,8 +677,7 @@ export default function ManageMatches() {
                     className="w-full px-3.5 py-2.5 rounded-xl text-sm bg-slate-50 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 font-semibold"
                   >
                     <option value="">เลือกทีมเยือน</option>
-                    {teams
-                      .filter((t) => !category || t.category === category)
+                    {eligibleTeams
                       .map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.name} ({t.category} กลุ่ม {t.group})

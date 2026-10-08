@@ -46,10 +46,10 @@
 | **ผู้ชมทั่วไป / นักกีฬา** | ดูตารางแข่ง, สดคะแนนเรียลไทม์, ผังสายโยง FIBA, ตารางคะแนน 3 กลุ่ม, ตารางเปรียบเทียบอันดับ 3, ข้อมูลทีม, ข่าวสาร | `http://localhost:5173/` |
 | **ผู้ดูแลระบบ (Admin)** | โหลดโครงสร้าง 24 ทีม, จับสายแข่ง, สร้างรอบ 8 ทีม, บันทึกคะแนนสด 3×3, เลื่อนทีมชนะเข้าชิง, จัดการทีมและข่าว | `http://localhost:5173/admin` |
 
-### 🔑 บัญชีแอดมินเริ่มต้น (Default Credentials)
+### 🔑 สร้างบัญชีแอดมิน
 - **URL**: `http://localhost:5173/admin/login`
-- **Username**: `admin`
-- **Password**: `admin123`
+- ไม่มีบัญชีเริ่มต้น ให้กำหนด `ADMIN_USERNAME`, `ADMIN_PASSWORD` (อย่างน้อย 14 ตัวอักษร) และ `JWT_SECRET` (อย่างน้อย 32 ตัวอักษร) ใน `server/.env`
+- ใช้คำสั่ง `npm run admin:create` จากโฟลเดอร์ `server` เพื่อสร้างบัญชีครั้งแรก
 
 ---
 
@@ -81,8 +81,8 @@
 
 ### 4.1 เข้าสู่ระบบแอดมิน (Admin Login)
 1. ไปที่ `http://localhost:5173/admin/login`
-2. กรอก Username: `admin` และ Password: `admin123`
-3. เข้าสู่ระบบสำเร็จจะนำไปยัง Admin Dashboard
+2. กรอกชื่อผู้ใช้และรหัสผ่านที่สร้างไว้ผ่าน `npm run admin:create`
+3. เข้าสู่ระบบสำเร็จจะนำไปยัง Admin Dashboard; session เก็บใน HttpOnly cookie และหมดอายุภายใน 8 ชั่วโมง
 
 ---
 
@@ -166,19 +166,76 @@
    ```
 
 ### การ Deploy ขึ้น Render แบบ Single Web Service
-ระบบได้รับการออกแบบให้รัน Backend + Frontend พร้อมกันใน Web Service เดียว:
-1. **Build Command** บน Render:
-   ```bash
-   cd client && npm install && npm run build && cd ../server && npm install && npx prisma db push
+ระบบรัน Frontend และ Backend ใน Render Web Service เดียว ส่วน PostgreSQL อยู่ภายนอก Render จึงเก็บข้อมูลแยกจากไฟล์ชั่วคราวของเว็บ
+
+#### 1. สร้างฐานข้อมูล PostgreSQL ฟรี
+1. สร้างบัญชีผู้ให้บริการ PostgreSQL เช่น [Neon](https://neon.com/) แล้วสร้าง project/database ใหม่ เลือก region ใกล้ Singapore หากมีตัวเลือก
+2. เปิดหน้า **Connect** ของฐานข้อมูล เลือก **Pooled connection** แล้วคัดลอก URL ไว้ใช้เป็น `DATABASE_URL`; คัดลอก URL แบบ direct ไว้เป็น `DIRECT_URL`. URL มีรหัสผ่านฐานข้อมูลอยู่ ห้ามเผยแพร่
+
+#### 2. เตรียมโค้ดและย้ายข้อมูลเดิมก่อนเปิด Render
+ต้องทำขั้นนี้ก่อน deploy ครั้งแรก เพื่อไม่ให้ seed สร้างข้อมูลตัวอย่างก่อน import ข้อมูล SQLite เดิม
+
+1. ติดตั้ง Node.js 22.13 ขึ้นไป แล้วเปิด PowerShell ที่โฟลเดอร์โปรเจกต์ เช่น `C:\Users\zero9\Desktop\3x3_fiba-main`
+2. สร้างไฟล์ environment แล้วเปิดแก้ไข:
+
+   ```powershell
+   if (!(Test-Path server\.env)) { Copy-Item server\.env.example server\.env }
+   notepad server\.env
    ```
-2. **Start Command** บน Render:
-   ```bash
-   cd server && node src/app.js
+
+   วาง pooled URL ใน `DATABASE_URL`, direct URL ใน `DIRECT_URL`, ตั้ง `JWT_SECRET` แบบสุ่มอย่างน้อย 32 ตัวอักษร และตั้ง `ADMIN_USERNAME` / `ADMIN_PASSWORD` ที่ต้องการใช้ในเว็บ ค่า admin password ต้องยาว 14–128 ตัวอักษร สร้างค่า secret แบบสุ่มได้ด้วยคำสั่งนี้ แล้วนำผลลัพธ์ไปแทน `CHANGE_ME` ใน `.env`:
+
+   ```powershell
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
    ```
-3. **Environment Variables**:
-   - `DATABASE_URL`: `file:./dev.db` (หรือ PostgreSQL URL)
-   - `JWT_SECRET`: คีย์สุ่มสำหรับ JWT
-   - `PORT`: 4000 (หรือให้ Render กำหนดให้อัตโนมัติ)
+
+3. ติดตั้งแพ็กเกจและสร้าง schema บน PostgreSQL เปล่า:
+
+   ```powershell
+   npm ci --prefix server
+   npm ci --prefix client
+   npm --prefix server run prisma:migrate:deploy
+   ```
+
+4. ถ้ามีฐานข้อมูลเดิมที่ `server\prisma\dev.db` ให้ import ทันที:
+
+   ```powershell
+   npm --prefix server run db:import-sqlite
+   ```
+
+   สคริปต์คัดลอกทีม, แมตช์, ข่าว, บัญชี admin และ ID ไปยัง PostgreSQL โดยไม่แก้ไฟล์ SQLite ต้นฉบับ และจะหยุดถ้าฐานข้อมูลปลายทางมีข้อมูลอยู่แล้ว หากไม่มี SQLite เดิม ให้รัน `npm --prefix server run seed` แทน; ถ้าจะทดสอบหน้า admin ในเครื่องด้วย ให้รัน `npm --prefix server run admin:create` ด้วย
+
+#### 3. ทดสอบเว็บในเครื่อง
+เปิด PowerShell สองหน้าต่างที่โฟลเดอร์โปรเจกต์:
+
+```powershell
+# หน้าต่างที่ 1: Backend
+npm --prefix server run dev
+```
+
+```powershell
+# หน้าต่างที่ 2: Frontend
+npm --prefix client run dev
+```
+
+เปิดหน้าเว็บที่ [http://localhost:5173](http://localhost:5173) และหน้าแอดมินที่ [http://localhost:5173/admin/login](http://localhost:5173/admin/login) ตรวจ Backend ที่ [http://localhost:4000/api/health](http://localhost:4000/api/health)
+
+#### 4. Deploy ไป Render Free
+1. ใส่โค้ดที่แก้แล้วใน GitHub repository ที่ Render เชื่อมต่อได้ แล้ว push ไปยัง branch ที่ต้องการ deploy
+2. ถ้ายังไม่มี Render service ให้เลือก **New → Blueprint**, เชื่อม GitHub repository และเลือก branch ที่มี `render.yaml` อยู่ที่ root จากนั้นกด Apply. ระหว่างสร้าง Render จะขอค่า `sync: false` ให้ใส่ `DATABASE_URL`, `DIRECT_URL`, `ADMIN_USERNAME` และ `ADMIN_PASSWORD`. `JWT_SECRET` สร้างให้อัตโนมัติ ดูขั้นตอนใน [Render Blueprint docs](https://render.com/docs/infrastructure-as-code)
+3. ถ้ามี Render service เดิมอยู่แล้ว อย่าสร้าง service ซ้ำ: เปิด service นั้น ไปที่ **Environment** แล้วเพิ่ม/แก้ค่าข้างต้น; ถ้าจัดการด้วย Blueprint ให้ sync Blueprint หลัง push ไฟล์ใหม่
+4. หาก service เดิมไม่ได้ใช้ Blueprint ให้ตั้ง **Build Command** เป็น:
+
+   ```text
+   npm run build && npm --prefix server run prisma:migrate:deploy && npm --prefix server run seed && npm --prefix server run admin:create
+   ```
+
+   และตั้ง **Start Command** เป็น `npm start` จากนั้นกด Manual Deploy / Deploy latest commit
+5. เปิดหน้า **Events/Logs** รอจน build และ deploy สำเร็จ แล้วเข้า URL `onrender.com` ของ service ต่อท้าย `/admin/login` เพื่อเข้าสู่ระบบ
+
+อย่าใส่ connection string, รหัสผ่าน หรือ `.env` ใน GitHub หรือส่งมาในแชต Render Free จะพักเว็บหลังไม่มี traffic ประมาณ 15 นาที จึงอาจใช้เวลาประมาณ 1 นาทีในการเปิดครั้งแรกหลังพัก ส่วนฐานข้อมูลฟรีมีโควตาและอาจหยุดรับการเชื่อมต่อชั่วคราวเมื่อใช้ครบ แต่การ restart/deploy ของ Render ไม่ลบข้อมูล PostgreSQL ภายนอก ควรเปิดดู quota และสำรองฐานข้อมูลจาก dashboard ของผู้ให้บริการเป็นระยะ
+
+การ deploy หลังจากนี้จะรัน Prisma migrations กับฐานข้อมูลเดิม; seed เพิ่มข้อมูลตัวอย่างเมื่อยังไม่มีทีม/แมตช์ และคำสั่ง admin จะสร้างหรืออัปเดตบัญชีตาม Environment Variables ที่ตั้งไว้ ห้ามใช้ `prisma db push` ระหว่าง build production
 
 ---
 

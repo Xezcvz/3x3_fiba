@@ -1,4 +1,43 @@
 const prisma = require('../prisma');
+const { parseMatchInput, scoreFromDetails, validateFinishedScore } = require('../utils/match-validation');
+
+const MATCH_STATUSES = new Set(['upcoming', 'live', 'finished']);
+const MATCH_CATEGORIES = new Set(['รุ่น A', 'รุ่น B']);
+
+function responseBadRequest(res, message) {
+  return res.status(400).json({ message });
+}
+
+function parseScoreDetails(value) {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try { return JSON.parse(value); } catch { return null; }
+}
+
+async function getTeamsForMatch(homeTeamId, awayTeamId) {
+  const teams = await prisma.team.findMany({
+    where: { id: { in: [homeTeamId, awayTeamId] } },
+    select: { id: true, category: true },
+  });
+  if (teams.length !== 2) return { error: 'ไม่พบข้อมูลทีมที่เลือก' };
+  const homeTeam = teams.find((team) => team.id === homeTeamId);
+  const awayTeam = teams.find((team) => team.id === awayTeamId);
+  if (homeTeamId === awayTeamId) return { error: 'ทีมทั้งสองฝั่งต้องไม่ใช่ทีมเดียวกัน' };
+  if (homeTeam.category !== awayTeam.category) return { error: 'เลือกทีมจากรุ่นการแข่งขันเดียวกันเท่านั้น' };
+  return { homeTeam, awayTeam };
+}
+
+function validateScoreState(status, homeScore, awayScore, details) {
+  const scoreError = validateFinishedScore(status, homeScore, awayScore, details);
+  if (scoreError) return scoreError;
+  if (details?.winReason === '21pts' && status === 'finished' && Math.max(homeScore, awayScore) < 21) {
+    return 'คะแนนชนะต้องถึง 21 แต้มตามเงื่อนไขที่เลือก';
+  }
+  if (status === 'live' && homeScore !== null && awayScore !== null && Math.max(homeScore, awayScore) >= 21) {
+    return 'ทีมที่ถึง 21 แต้มต้องเปลี่ยนสถานะแมตช์เป็นจบการแข่งขัน';
+  }
+  return null;
+}
 
 async function getMatches(req, res, next) {
   try {
@@ -6,32 +45,40 @@ async function getMatches(req, res, next) {
 
     const where = {};
 
+    if (status && status !== 'all' && !MATCH_STATUSES.has(status)) {
+      return responseBadRequest(res, 'สถานะแมตช์ไม่ถูกต้อง');
+    }
     if (status && status !== 'all') {
       where.status = status;
     }
 
     if (category && category !== 'all') {
+      if (!MATCH_CATEGORIES.has(category)) return responseBadRequest(res, 'รุ่นการแข่งขันไม่ถูกต้อง');
       where.category = category;
     }
 
     if (venue && venue !== 'all') {
+      if (typeof venue !== 'string' || venue.length > 120) return responseBadRequest(res, 'ชื่อสนามไม่ถูกต้อง');
       where.venue = { contains: venue };
     }
 
     if (teamId) {
-      const parsedTeamId = parseInt(teamId, 10);
-      if (!isNaN(parsedTeamId)) {
-        where.OR = [
-          { homeTeamId: parsedTeamId },
-          { awayTeamId: parsedTeamId }
-        ];
-      }
+      const parsedTeamId = /^\d+$/.test(teamId) ? Number(teamId) : NaN;
+      if (!Number.isSafeInteger(parsedTeamId) || parsedTeamId <= 0) return responseBadRequest(res, 'รหัสทีมไม่ถูกต้อง');
+      where.AND = [...(where.AND || []), { OR: [{ homeTeamId: parsedTeamId }, { awayTeamId: parsedTeamId }] }];
     }
 
     if (group && group !== 'all') {
-      where.homeTeam = {
-        group: group
-      };
+      if (!['A', 'B', 'C'].includes(group)) return responseBadRequest(res, 'กลุ่มการแข่งขันไม่ถูกต้อง');
+      where.AND = [...(where.AND || []), { OR: [
+        { homeTeam: { group } },
+        { awayTeam: { group } },
+      ] }];
+    }
+
+    const parsedLimit = limit === undefined ? undefined : Number(limit);
+    if (parsedLimit !== undefined && (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100)) {
+      return responseBadRequest(res, 'limit ต้องเป็นจำนวนเต็มตั้งแต่ 1 ถึง 100');
     }
 
     const matches = await prisma.match.findMany({
@@ -40,10 +87,8 @@ async function getMatches(req, res, next) {
         homeTeam: true,
         awayTeam: true,
       },
-      orderBy: [
-        { matchDate: 'asc' },
-      ],
-      take: limit ? parseInt(limit, 10) : undefined,
+      orderBy: [{ matchDate: status === 'finished' ? 'desc' : 'asc' }],
+      take: parsedLimit,
     });
 
     // Helper to safely parse quarterScores
@@ -70,8 +115,8 @@ async function getMatches(req, res, next) {
 
 async function getMatchById(req, res, next) {
   try {
-    const id = parseInt(req.params.id, 10);
-    if (isNaN(id)) {
+    const id = /^\d+$/.test(req.params.id) ? Number(req.params.id) : NaN;
+    if (!Number.isSafeInteger(id) || id < 1) {
       return res.status(400).json({ message: 'Invalid match ID' });
     }
 
@@ -107,54 +152,42 @@ async function getMatchById(req, res, next) {
 
 async function createMatch(req, res, next) {
   try {
-    const {
-      homeTeamId,
-      awayTeamId,
-      category,
-      matchDate,
-      venue,
-      status = 'upcoming',
-      round = 'รอบแบ่งกลุ่ม',
-      homeScore = null,
-      awayScore = null,
-      quarterScores = null,
-    } = req.body;
+    const input = {
+      ...req.body,
+      category: req.body?.category || 'รุ่น A',
+      status: req.body?.status || 'upcoming',
+      round: req.body?.round || 'รอบแบ่งกลุ่ม',
+      venue: req.body?.venue || 'สนาม 1',
+      homeScore: req.body?.homeScore ?? null,
+      awayScore: req.body?.awayScore ?? null,
+      quarterScores: req.body?.quarterScores ?? null,
+    };
+    const parsed = parseMatchInput(input);
+    if (!parsed.success) return responseBadRequest(res, parsed.message);
 
-    if (!homeTeamId || !awayTeamId) {
-      return res.status(400).json({ message: 'กรุณาเลือกทีมเหย้าและทีมเยือน' });
+    const matchData = parsed.data;
+    const teams = await getTeamsForMatch(matchData.homeTeamId, matchData.awayTeamId);
+    if (teams.error) return responseBadRequest(res, teams.error);
+    if (matchData.round.includes('รอบแบ่งกลุ่ม') && (teams.homeTeam.group !== teams.awayTeam.group || !teams.homeTeam.group)) {
+      return responseBadRequest(res, 'แมตช์รอบแบ่งกลุ่มต้องเป็นทีมในกลุ่มเดียวกัน');
     }
+    if (teams.homeTeam.category !== matchData.category) return responseBadRequest(res, 'รุ่นแข่งขันต้องตรงกับรุ่นของทีม');
 
-    if (parseInt(homeTeamId, 10) === parseInt(awayTeamId, 10)) {
-      return res.status(400).json({ message: 'ทีมเหย้าและทีมเยือนต้องไม่ใช่ทีมเดียวกัน' });
-    }
-
-    if (!matchDate) {
-      return res.status(400).json({ message: 'กรุณาระบุวันและเวลาแข่งขัน' });
-    }
-
-    const stringifiedQuarters = typeof quarterScores === 'object' && quarterScores !== null
-      ? JSON.stringify(quarterScores)
-      : (typeof quarterScores === 'string' ? quarterScores : null);
-
-    // Look up home team category if not provided
-    let matchCat = category;
-    if (!matchCat) {
-      const ht = await prisma.team.findUnique({ where: { id: parseInt(homeTeamId, 10) } });
-      matchCat = ht?.category || 'รุ่น A';
-    }
+    const details = matchData.quarterScores;
+    const derivedHomeScore = scoreFromDetails(details, 'Home');
+    const derivedAwayScore = scoreFromDetails(details, 'Away');
+    const homeScore = derivedHomeScore ?? matchData.homeScore;
+    const awayScore = derivedAwayScore ?? matchData.awayScore;
+    const scoreError = validateScoreState(matchData.status, homeScore, awayScore, details);
+    if (scoreError) return responseBadRequest(res, scoreError);
 
     const match = await prisma.match.create({
       data: {
-        homeTeamId: parseInt(homeTeamId, 10),
-        awayTeamId: parseInt(awayTeamId, 10),
-        category: matchCat,
-        matchDate: new Date(matchDate),
-        venue: venue || 'สนาม 1',
-        status: status || 'upcoming',
-        round: round || 'รอบแบ่งกลุ่ม',
-        homeScore: homeScore !== null && homeScore !== '' ? parseInt(homeScore, 10) : null,
-        awayScore: awayScore !== null && awayScore !== '' ? parseInt(awayScore, 10) : null,
-        quarterScores: stringifiedQuarters,
+        ...matchData,
+        matchDate: new Date(matchData.matchDate),
+        homeScore,
+        awayScore,
+        quarterScores: details ? JSON.stringify(details) : null,
       },
       include: {
         homeTeam: true,
@@ -170,54 +203,60 @@ async function createMatch(req, res, next) {
 
 async function updateMatch(req, res, next) {
   try {
-    const id = parseInt(req.params.id, 10);
-    if (isNaN(id)) {
+    const id = /^\d+$/.test(req.params.id) ? Number(req.params.id) : NaN;
+    if (!Number.isSafeInteger(id) || id < 1) {
       return res.status(400).json({ message: 'Invalid match ID' });
     }
 
-    const {
-      homeTeamId,
-      awayTeamId,
-      category,
-      matchDate,
-      venue,
-      status,
-      round,
-      homeScore,
-      awayScore,
-      quarterScores,
-    } = req.body;
+    const existing = await prisma.match.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ message: 'ไม่พบแมตช์ที่ต้องการแก้ไข' });
 
-    const data = {};
+    const parsed = parseMatchInput(req.body, { partial: true });
+    if (!parsed.success) return responseBadRequest(res, parsed.message);
+    if (Object.keys(parsed.data).length === 0) return responseBadRequest(res, 'กรุณาระบุข้อมูลที่ต้องการแก้ไข');
 
-    if (homeTeamId !== undefined) data.homeTeamId = parseInt(homeTeamId, 10);
-    if (awayTeamId !== undefined) data.awayTeamId = parseInt(awayTeamId, 10);
-    if (category !== undefined) data.category = category;
-    if (matchDate !== undefined) data.matchDate = new Date(matchDate);
-    if (venue !== undefined) data.venue = venue;
-    if (status !== undefined) data.status = status;
-    if (round !== undefined) data.round = round;
-
-    if (homeScore !== undefined) {
-      data.homeScore = homeScore === null || homeScore === '' ? null : parseInt(homeScore, 10);
+    const updates = parsed.data;
+    const homeTeamId = updates.homeTeamId ?? existing.homeTeamId;
+    const awayTeamId = updates.awayTeamId ?? existing.awayTeamId;
+    if (homeTeamId == null || awayTeamId == null) {
+      return responseBadRequest(res, 'กรุณากำหนดทีมทั้งสองฝั่งก่อนเริ่มแข่งขัน');
     }
-    if (awayScore !== undefined) {
-      data.awayScore = awayScore === null || awayScore === '' ? null : parseInt(awayScore, 10);
-    }
+    const teams = await getTeamsForMatch(homeTeamId, awayTeamId);
+    if (teams.error) return responseBadRequest(res, teams.error);
+    const category = updates.category ?? (updates.homeTeamId ? teams.homeTeam.category : existing.category);
+    if (teams.homeTeam.category !== category) return responseBadRequest(res, 'รุ่นแข่งขันต้องตรงกับรุ่นของทีม');
 
-    if (quarterScores !== undefined) {
-      data.quarterScores = typeof quarterScores === 'object' && quarterScores !== null
-        ? JSON.stringify(quarterScores)
-        : (typeof quarterScores === 'string' ? quarterScores : null);
+    const details = Object.hasOwn(updates, 'quarterScores')
+      ? updates.quarterScores
+      : parseScoreDetails(existing.quarterScores);
+    const homeScoreFromDetails = Object.hasOwn(updates, 'quarterScores') ? scoreFromDetails(details, 'Home') : null;
+    const awayScoreFromDetails = Object.hasOwn(updates, 'quarterScores') ? scoreFromDetails(details, 'Away') : null;
+    const homeScore = homeScoreFromDetails ?? (updates.homeScore !== undefined ? updates.homeScore : existing.homeScore);
+    const awayScore = awayScoreFromDetails ?? (updates.awayScore !== undefined ? updates.awayScore : existing.awayScore);
+    const status = updates.status ?? existing.status;
+    if ((updates.round ?? existing.round)?.includes('รอบแบ่งกลุ่ม') && (teams.homeTeam.group !== teams.awayTeam.group || !teams.homeTeam.group)) {
+      return responseBadRequest(res, 'แมตช์รอบแบ่งกลุ่มต้องเป็นทีมในกลุ่มเดียวกัน');
     }
+    const scoreError = validateScoreState(status, homeScore, awayScore, details);
+    if (scoreError) return responseBadRequest(res, scoreError);
 
-    const updatedMatch = await prisma.match.update({
-      where: { id },
-      data,
-      include: {
-        homeTeam: true,
-        awayTeam: true,
+    const data = { ...updates, category, homeTeamId, awayTeamId, homeScore, awayScore };
+    if (updates.matchDate) data.matchDate = new Date(updates.matchDate);
+    if (Object.hasOwn(updates, 'quarterScores')) data.quarterScores = details ? JSON.stringify(details) : null;
+
+    const updatedMatch = await prisma.$transaction(async (transaction) => {
+      const { clearDownstreamKnockoutSlots } = require('./tournament.controller');
+      const updated = await transaction.match.update({
+        where: { id },
+        data,
+        include: { homeTeam: true, awayTeam: true },
+      });
+      const participantsChanged = (updates.homeTeamId !== undefined && updates.homeTeamId !== existing.homeTeamId)
+        || (updates.awayTeamId !== undefined && updates.awayTeamId !== existing.awayTeamId);
+      if (participantsChanged && (existing.status === 'finished' || existing.status === 'live')) {
+        await clearDownstreamKnockoutSlots(transaction, existing);
       }
+      return updated;
     });
 
     // Auto-advance winner if this is a finished knockout match
@@ -242,14 +281,15 @@ async function updateMatch(req, res, next) {
 
     return res.json({ message: 'อัปเดตข้อมูลแมตช์สำเร็จ', match: updatedMatch });
   } catch (error) {
+    if (error.statusCode === 409) return res.status(409).json({ message: error.message });
     next(error);
   }
 }
 
 async function deleteMatch(req, res, next) {
   try {
-    const id = parseInt(req.params.id, 10);
-    if (isNaN(id)) {
+    const id = /^\d+$/.test(req.params.id) ? Number(req.params.id) : NaN;
+    if (!Number.isSafeInteger(id) || id < 1) {
       return res.status(400).json({ message: 'Invalid match ID' });
     }
 
@@ -267,11 +307,12 @@ async function deleteMatch(req, res, next) {
 // Clears scores and sets status to upcoming for all matches or by category
 async function resetMatchScores(req, res, next) {
   try {
-    const { category } = req.body;
-    const where = {};
-    if (category && category !== 'all') {
-      where.category = category;
+    const category = req.body?.category;
+    if (category !== 'all' && !MATCH_CATEGORIES.has(category)) {
+      return responseBadRequest(res, 'กรุณาระบุรุ่นที่ต้องการรีเซ็ต');
     }
+    const where = {};
+    if (category !== 'all') where.category = category;
 
     const updated = await prisma.match.updateMany({
       where,
@@ -296,11 +337,12 @@ async function resetMatchScores(req, res, next) {
 // Deletes all matches or by category
 async function resetAllMatches(req, res, next) {
   try {
-    const { category } = req.body;
-    const where = {};
-    if (category && category !== 'all') {
-      where.category = category;
+    const category = req.body?.category;
+    if (category !== 'all' && !MATCH_CATEGORIES.has(category)) {
+      return responseBadRequest(res, 'กรุณาระบุรุ่นที่ต้องการล้างตาราง');
     }
+    const where = {};
+    if (category !== 'all') where.category = category;
 
     const deleted = await prisma.match.deleteMany({
       where,

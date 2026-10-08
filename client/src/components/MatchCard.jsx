@@ -59,7 +59,7 @@ export default function MatchCard({ match }) {
             </div>
             <div>
               <p className={`font-semibold text-sm sm:text-base ${homeWin ? 'text-primary-700 font-bold' : 'text-slate-800'}`}>
-                {match.homeTeam?.name || 'ทีมเจ้าบ้าน'}
+                {match.homeTeam?.name || 'TBD · ทีมเจ้าบ้าน'}
               </p>
               <span className="text-[11px] text-slate-400 font-medium">เจ้าบ้าน</span>
             </div>
@@ -102,7 +102,7 @@ export default function MatchCard({ match }) {
             </div>
             <div>
               <p className={`font-semibold text-sm sm:text-base ${awayWin ? 'text-primary-700 font-bold' : 'text-slate-800'}`}>
-                {match.awayTeam?.name || 'ทีมเยือน'}
+                {match.awayTeam?.name || 'TBD · ทีมเยือน'}
               </p>
               <span className="text-[11px] text-slate-400 font-medium">ทีมเยือน</span>
             </div>

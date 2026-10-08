@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { getNews } from '../services/api';
 import NewsCard from '../components/NewsCard';
+import ApiErrorNotice from '../components/ApiErrorNotice';
+import useLiveUpdates from '../hooks/useLiveUpdates';
 import { Newspaper, Search, Tag, X, Calendar } from 'lucide-react';
 
 export default function News() {
@@ -9,24 +11,26 @@ export default function News() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNews, setSelectedNews] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    fetchNews();
-  }, [categoryFilter]);
-
-  const fetchNews = async () => {
+  const fetchNews = useCallback(async ({ showLoading = true } = {}) => {
+    if (showLoading) setLoading(true);
     try {
-      setLoading(true);
       const params = {};
       if (categoryFilter !== 'all') params.category = categoryFilter;
       const res = await getNews(params);
       setNewsList(res.data);
+      setLoadError(false);
     } catch (err) {
       console.error(err);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
-  };
+  }, [categoryFilter]);
+
+  useEffect(() => { fetchNews(); }, [fetchNews]);
+  useLiveUpdates(() => fetchNews({ showLoading: false }));
 
   const filteredNews = newsList.filter((n) => {
     if (!searchQuery.trim()) return true;
@@ -76,6 +80,8 @@ export default function News() {
         </div>
       </div>
 
+      {loadError && <ApiErrorNotice onRetry={() => fetchNews()} />}
+
       {/* Search Input */}
       <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm max-w-md">
         <div className="relative">
@@ -97,7 +103,7 @@ export default function News() {
             <div key={i} className="h-72 bg-white rounded-2xl border border-slate-100 animate-pulse" />
           ))}
         </div>
-      ) : filteredNews.length > 0 ? (
+      ) : loadError ? null : filteredNews.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {filteredNews.map((news) => (
             <div

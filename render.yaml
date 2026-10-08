@@ -1,13 +1,14 @@
-# render.yaml — Render deployment configuration
-# Deploy the entire app as a single Web Service (Express serves both API and React)
+# Render Free web service + external PostgreSQL database (e.g. Neon).
 services:
   - type: web
     name: basketball-tournament
     env: node
-    region: singapore          # ใกล้ไทยที่สุด
-    plan: free                 # เปลี่ยนเป็น starter ถ้าต้องการ persistent disk
+    region: singapore
+    plan: free
 
-    buildCommand: npm run build
+    # Migrations run against the external database during build because Free
+    # services do not support pre-deploy/release commands or persistent disks.
+    buildCommand: npm run build && npm --prefix server run prisma:migrate:deploy && npm --prefix server run seed && npm --prefix server run admin:create
     startCommand: npm start
 
     envVars:
@@ -15,12 +16,16 @@ services:
         value: production
       - key: PORT
         value: 4000
-      # ตั้ง JWT_SECRET ใน Render Dashboard (Environment Variables)
-      # ห้ามเซฟค่าจริงในไฟล์นี้!
       - key: JWT_SECRET
-        generateValue: true    # Render จะสร้างค่า random ให้อัตโนมัติ
-      # SQLite: ข้อมูลจะหายเมื่อ Redeploy (Free Plan)
-      # ถ้าต้องการข้อมูลถาวร เปิดใช้ Persistent Disk ใน Render Dashboard
-      # หรือเปลี่ยนไปใช้ DATABASE_URL ของ PostgreSQL
+        generateValue: true
+      # Add the pooled/direct PostgreSQL URLs and admin credentials in Dashboard.
       - key: DATABASE_URL
-        value: file:./dev.db
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NAME
+        value: Tournament Administrator
